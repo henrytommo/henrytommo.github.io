@@ -1,8 +1,3 @@
-/* Colour scheme — change these and everything follows (dark -> light)
-   "olive":       #283618 #606c38 #bc6c25 #dda15e #fefae0
-   "leafy green": #132a13 #31572c #4f772d #90a955 #ecf39e
-   "fresh greens": #386641 #6a994e #e76f51 #a7c957 #f2e8cf
-*/
 :root {
     --c1: #283618;
     --c2: #606c38;
