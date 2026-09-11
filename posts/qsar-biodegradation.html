@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QSAR Biodegradation Prediction</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <div class="logo">hi</div>
+            <nav>
+                <ul>
+                    <li><a href="../index.html">Home</a></li>
+                    <li><a href="../posts.html" class="active">Posts</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <article>
+                <h1>QSAR Biodegradation Prediction</h1>
+                <span class="post-date">September 2026</span>
+
+                <p>A little while ago, I followed a great tutorial on writing up a simple graph neural network from scratch. I was keen to put these learnings about 
+                    GNNs into chemical context, and at the time was reading some cool stuff about predicting the biodegradability about certain compounds using ML.
+                    A quick Google search found the QSAR dataset, and I jumped right in to try out my new GNN skills. However, my choice of dataset was probably more 
+                    suited to a different type of model (also tried that out); the great thing about GNNs for molecular prediction is the properties they "infer" within
+                    their hidden layers. This dataset already had those properties as part of the tabular dataset, and those properties calculated by "real" chemistry
+                    will probably outperform whatever relationships are found in my simple model. Regardless, it was a great learning experience.<p>
+
+                <h2>Data prep</h2>
+                <ul>
+                    <li>~1,055 molecules, binary target (RB / NRB), Mansouri 2013 dataset; class-imbalanced (~34% RB).</li>
+                    <li>41 precomputed QSAR descriptors as base features.</li>
+                    <li>Stratified k-fold; scaling fit inside each fold (no leakage).</li>
+                    <li>Dataset was fairly clean, drop rows with failed features (1,055 down to 1,050).</li>
+                    <li>Added SMILES - molecular graphs for the GCN (structure + QSAR globals).</li>
+                </ul>
+
+                <h2>Feature engineering</h2>
+                <ul>
+                    <li>+3 RDKit 2D descriptors: MolLogP, MolWt, TPSA (checked overlap first — none direct).</li>
+                    <li>+6 xTB electronic descriptors via dxtb (GFN1-xTB, RDKit ETKDGv3+MMFF 3D): HOMO-LUMO gap, IP, EA, electrophilicity, Fukui±, WBO (total/max), dispersion -> 53 features total. Cached (<code>xtb_features.csv</code>) as they're slow to compute.</li>
+                    <li>Leak-free per-fold feature ranking searched jointly with hyperparams; final cap at 20 features (GCN ranks via XGBoost importances — cheaper than GNNExplainer over folds).</li>
+                </ul>
+
+                <h2>Models &amp; reasoning</h2>
+                <ul>
+                    <li><strong>XGBoost</strong> — strong tabular baseline, handles collinearity/nonlinearity, gives feature importances.</li>
+                    <li><strong>Logistic regression</strong> — interpretable linear baseline, L1/elastic-net for sparsity, class-balanced.</li>
+                    <li><strong>GCN</strong> — tests whether raw structure beats hand-made descriptors.</li>
+                </ul>
+
+                <h2>Mistakes / dead ends</h2>
+                <ul>
+                    <li>Stereoisomer flags + GINEConv - thought this may give some insights as whatever enzymes are being used to break down these chemicals will likely be stereospecific. However, only about 1% were chiral, and the GINEConv gave worse results so that was scrapped.</li>
+                    <li>GCN tuning "mirage": a config tuned to test F1 0.816 but delivered 0.783 across seeds → fixed by 3× repeated 5-fold CV.</li>
+                    <li>4 molecules with unphysical ΔSCF (IP up to ~1785 eV), so added physical-bounds guard, and dropped them.</li>
+                    <li>Code stuff: xgboost must load before torch/dxtb (OpenMP clash) + <code>OMP_NUM_THREADS=1</code>.</li>
+                </ul>
+
+                <h2>Packages tried</h2>
+                <ul>
+                    <li>dxtb (kept), RDKit, torch-geometric, xgboost, sklearn.</li>
+                </ul>
+
+                <h2>Key results / findings</h2>
+                <ul>
+                    <li>All three models get about the same metrics, around F1 ≈ 0.78–0.79, ROC-AUC ≈ 0.92 — task is saturated / data-limited, not feature-limited (extra descriptors rank well but don't improve much).</li>
+                    <li>Capping 53 → 20 (or 15) features costs nothing and makes everything simpler.</li>
+                    <li>Errors only partly shared — 34% of misses are single-model; there were 97 molecules (9.2%) wrong for all three, both classes.</li>
+                    <li>Ensemble (xgb+logreg soft-vote) beats every single model internally; GCN internally droppable.</li>
+                    <li>External validation (670 held-out): both generalise, no overfitting; GCN slighlty better than the ensemble out-of-sample (learns something from 3D structure).</li>
+                </ul>
+            </article>
+        </main>
+    </div>
+
+</body>
+</html>
