@@ -13,7 +13,9 @@
     --rule: rgba(96, 108, 56, 0.25);   /* c2 at 25% */
     --surface: rgba(242, 232, 207, 0.6); /* faint c5, for boxes inside the white column */
     --column: #ffffff;
-    --band-height: 220px;   /* how far the dark top band extends down the page */
+    /* dark top band: ~1/4 of the viewport, but never so short it ends above the
+       header rule (~150px) nor so tall it swallows the intro text */
+    --band-height: clamp(180px, 25vh, 260px);
 
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --heading: var(--sans);
