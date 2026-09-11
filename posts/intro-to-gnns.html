@@ -25,11 +25,94 @@
                 <h1>An Intro to GNNs</h1>
                 <span class="post-date">September 2026</span>
 
-                <p>An overview of my learning process for GNNs.</p>
+                <p class="tagline">A (very basic!) intro to GNNs</p>
+
+                <h2>Why Graph Neural Networks?</h2>
+                <p>ML models often use tabular data to make predictions. Which is great if your data is tabular, but not so great when it's not. For example, how do you encode
+                    a molecule in tabular data? You could maybe give coords of atoms (but these aren't static), or just extract various properties and use these as a proxy
+                    for the molecule. Graph neural networks avoid tabular data and encode data as graphs instead.
+                </p>
+                <ul>
+                    <li><strong>Social networks:</strong> people are nodes and their connections are edges. There would only be edges between people who know each other</li>
+                    <li><strong>Transportation networks:</strong> nodes are bus stops/train stations etc, and edges are the routes connecting the stops</li>
+                    <li><strong>Molecules (what we're interested in!):</strong> atoms are nodes, and edges are bonds</li>
+                </ul>
+
+                <p>A great place to start is <a href="https://distill.pub/2021/gnn-intro/" target="_blank" rel="noopener">A Gentle Introduction to Graph Neural Networks</a>. I used this as a starting point,
+                    and also reproduced an interactive widget from that article with my own GNN - you can find it further down this page.
+                </p>
+
+                <h2>The basics</h2>
+                <p>"Nodes" and "edges" were mentioned in the examples above. Using the social network example:</p>
+                <dl>
+                    <dt>Node</dt>
+                    <dd>A point on a graph that is connected to other nodes - a person.</dd>
+                    <dt>Edge</dt>
+                    <dd>The connector between two nodes - a relationship between two people.</dd>
+                    <dt>Directed vs undirected</dt>
+                    <dd>If an edge is undirected, direction doesn't matter: two people who know each other have an undirected edge between them.
+                        If a bus route connects two stops in one direction but not the other, that edge is directed.</dd>
+                    <dt>Global attributes</dt>
+                    <dd>Properties of the entire graph. For a molecule, this might be its lipophilicity.</dd>
+                </dl>
+
+                <p>Within GNNs, we have different types of problems:</p>
+                <ul>
+                    <li><strong>Graph-level:</strong> predict a single property of the whole graph (for example, the solubility of a molecule)</li>
+                    <li><strong>Node-level:</strong> predict a property for a given node (for example, a person's social status)</li>
+                    <li><strong>Edge-level:</strong> predict a property of a single edge (for example, the relationship between two people)</li>
+                </ul>
+
+                <h2>How a GNN works</h2>
+                <p>A GNN takes in a graph and outputs a graph, finding relationships without changing connectivity.
+                    Most GNNs use a message passing framework, which will be discussed here.
+                </p>
+                <p>The GNN learns new embeddings for all graph attributes (nodes, edges, global properties), with a separate multi-layer perceptron on each component - this is the GNN layer.
+                    Several GNN layers are stacked together, which output the transformed graph. A classification layer may be put on top of this (to transform outputs) and the prediction is output.
+                    There is info in both the nodes and edges, and gathering all this information is called "pooling", which is just aggregation.
+                </p>
+
+                <h3>Message passing</h3>
+                <p>Message passing is how learned embeddings can be made aware of graph connectivity.</p>
+                <ul>
+                    <li>For each node in a graph, all neighbour node embeddings are aggregated via an aggregate function</li>
+                    <li>All pooled messages are passed through an update function</li>
+                    <li>Similar to convolution: an element's value is updated via aggregation and processing of neighbour properties. Note that the number of neighbours can vary in a graph</li>
+                    <li>By stacking message passing GNN layers, a node can eventually incorporate info across the entire graph. After <var>n</var> layers, a node has info from nodes <var>n</var> edges away</li>
+                </ul>
+
+                <h3>Global representations</h3>
+                <p>For small graphs, there are only a few steps away from all nodes, so messages can be passed. For much larger graphs, this would be too many layers (note also that having too many layers will average properties out over all the different nodes).
+                    A way around this is to use a global representation of a graph, sometimes called a context vector, which is connected to all nodes and edges and can be used as a bridge to pass info.
+                </p>
+
+                <h3>Putting it together</h3>
+                <p>Just like a neural network, a GNN (or in this case, GCN - graph convolutional network) is made up of layers.
+                    As the features of a node pass through the layers, parameters control how this information propagates through the graph.
+                </p>
+                <p><var>W</var> is a weight matrix that is multiplied by the features, and <var>b</var> is the offset that is added. At each layer, <var>W</var> and <var>b</var> change the input matrix
+                    and pass it on to the next layer. The values of <var>W</var> and <var>b</var> per layer are updated via backpropagation.
+                </p>
+                <p>After the data has passed through the hidden layers, the dimensions of the hidden matrix need to be converted to
+                    the desired dimensions of the output matrix, in another layer with learnable weights and biases. The flow diagram below shows a flow through a classification problem.
+                </p>
+
+                <figure class="post-figure">
+                    <img src="../data/intro-to-gnns/gnn_flowchart_cleaned.png" alt="Flowchart of a message-passing GNN: input graph, stacked GNN layers updating node, edge and global embeddings, pooling, then a prediction head.">
+                    <figcaption>Flowchart of a classification GNN</figcaption>
+                </figure>
 
                 <h2>Test out some hyperparams</h2>
-                <p>note: every combo was trained ahead of time (3 seeds each), so this is a lookup rather than live model.</p>
+                <p>Below is an interactive widget to investigate how changing various parameters affects performance of the model.</p>
+                <ul>
+                    <li><strong>Hidden channels:</strong> the size of the hidden feature vectors inside the hidden layers</li>
+                    <li><strong>Layers:</strong> the number of layers the data passes through</li>
+                    <li><strong>Learning rate:</strong> the step size when updating <var>W</var> and <var>b</var></li>
+                    <li><strong>Weight decay:</strong> a type of regularisation - adds a small penalty to the loss function based on weight size, encouraging the network to keep <var>W</var> small</li>
+                    <li><strong>Epochs:</strong> how many passes of the entire training set through the GNN</li>
+                </ul>
                 <div id="gnn-demo"></div>
+                <p class="note">Note: every combination was trained ahead of time (3 seeds each), so this is a lookup rather than a live model.</p>
             </article>
         </main>
     </div>

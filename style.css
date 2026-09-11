@@ -89,7 +89,7 @@ header {
 
 .logo {
     font-family: var(--heading);
-    font-size: 1.6rem;
+    font-size: 2rem;
     font-weight: bold;
     color: var(--c1);
     border-bottom: none;
@@ -227,6 +227,53 @@ article h2 {
     margin: 36px 0 12px;
 }
 
+article h3 {
+    font-family: var(--heading);
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--c1);
+    margin: 28px 0 8px;
+}
+
+article .tagline {
+    margin-top: 0;
+    margin-bottom: 24px;
+}
+
+article strong {
+    font-weight: 600;
+    color: var(--c1);
+}
+
+article var {
+    font-family: var(--mono);
+    font-style: italic;
+    font-size: 0.95em;
+}
+
+article dl {
+    margin-bottom: 18px;
+}
+
+article dt {
+    font-weight: 600;
+    color: var(--c1);
+    margin-top: 10px;
+}
+
+article dd {
+    font-size: 1.05rem;
+    margin-left: 0;
+    padding-left: 16px;
+    border-left: 3px solid var(--rule);
+}
+
+article .note {
+    font-size: 0.9rem;
+    color: var(--c2);
+    margin-top: -18px;
+}
+
 article p {
     font-size: 1.1rem;
     color: var(--text);
@@ -255,6 +302,27 @@ article code {
     color: var(--c1);
     padding: 2px 6px;
     border-radius: 4px;
+}
+
+/* Figures in posts */
+.post-figure {
+    margin: 28px 0;
+}
+
+.post-figure img {
+    display: block;
+    max-width: 100%;      /* never wider than the column */
+    max-height: 80vh;     /* portrait images: don't exceed the screen */
+    width: auto;
+    height: auto;
+    margin: 0 auto;
+}
+
+.post-figure figcaption {
+    margin-top: 8px;
+    font-size: 0.9rem;
+    color: var(--c2);
+    text-align: center;
 }
 
 /* GNN hyperparameter demo (posts/intro-to-gnns.html, js/intro-to-gnns.js) */
