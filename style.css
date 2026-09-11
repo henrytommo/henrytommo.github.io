@@ -1,3 +1,30 @@
+/* Colour scheme — change these and everything follows (dark -> light)
+   "olive":       #283618 #606c38 #bc6c25 #dda15e #fefae0
+   "leafy green": #132a13 #31572c #4f772d #90a955 #ecf39e
+   "fresh greens": #386641 #6a994e #e76f51 #a7c957 #f2e8cf
+*/
+:root {
+    --c1: #283618;
+    --c2: #606c38;
+    --c3: #bc6c25;
+    --c4: #dda15e;
+    --c5: #f2e8cf;
+
+    --bg: var(--c5);
+    --text: var(--c1);
+    --muted: var(--c2);
+    --accent: var(--c3);
+    --accent-soft: var(--c4);
+    --rule: rgba(96, 108, 56, 0.25);   /* c2 at 25% */
+    --surface: rgba(242, 232, 207, 0.6); /* faint c5, for boxes inside the white column */
+    --column: #ffffff;
+    --band-height: 220px;   /* how far the dark top band extends down the page */
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --heading: var(--sans);
+    --mono: SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 /* Base Reset */
 * {
     margin: 0;
@@ -5,18 +32,52 @@
     box-sizing: border-box;
 }
 
+html {
+    scroll-behavior: smooth;
+}
+
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    line-height: 1.6;
-    color: #333;
-    background-color: #f9f9f9;
+    font-family: var(--sans);
+    line-height: 1.7;
+    color: var(--text);
+    background-color: var(--bg);
+    /* dark band across the top of the page, behind the white column */
+    background-image: linear-gradient(var(--c1) 0, var(--c1) var(--band-height), var(--bg) var(--band-height));
+    background-repeat: no-repeat;
+    background-attachment: fixed;   /* background stays put; only the column scrolls */
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     padding: 40px 20px;
 }
 
 /* Container to keep layout centered and neat */
 .container {
-    max-width: 800px;
+    max-width: 760px;
+    width: 100%;
     margin: 0 auto;
+    flex: 1;
+    background: var(--column);
+    padding: 40px 48px 48px;
+    border-radius: 10px;
+}
+
+::selection {
+    background: var(--c4);
+    color: var(--c1);
+}
+
+/* Links (in body text) */
+a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid var(--accent-soft);
+    transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+a:hover {
+    color: var(--c1);
+    border-bottom-color: var(--c1);
 }
 
 /* Header Layout: Title on left, Tabs on top-right */
@@ -24,55 +85,86 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 2px solid #eaeaea;
-    padding-bottom: 20px;
-    margin-bottom: 40px;
+    border-bottom: 2px solid var(--c2);
+    padding-bottom: 18px;
+    margin-bottom: 48px;
 }
 
 .logo {
-    font-size: 1.5rem;
+    font-family: var(--heading);
+    font-size: 1.6rem;
     font-weight: bold;
-    color: #111;
+    color: var(--c1);
+    border-bottom: none;
+    letter-spacing: 0.02em;
+}
+
+.logo .plus {
+    color: var(--accent);
 }
 
 /* Top-Right Navigation Tabs */
 nav ul {
     display: flex;
     list-style: none;
-    gap: 15px;
+    gap: 6px;
 }
 
 nav a {
-    text-decoration: none;
-    color: #666;
+    color: var(--c2);
     font-weight: 500;
-    padding: 8px 16px;
-    border-radius: 6px;
+    font-size: 0.95rem;
+    padding: 6px 14px;
+    border: 1px solid transparent;
+    border-radius: 999px;
     transition: all 0.2s ease;
 }
 
 /* Hover and Active Visual States */
 nav a:hover {
-    background-color: #eee;
-    color: #111;
+    border-color: var(--c2);
+    color: var(--c1);
 }
 
 nav a.active {
-    background-color: #0066cc;
-    color: white;
+    background-color: var(--c2);
+    border-color: var(--c2);
+    color: var(--c5);
 }
 
 /* Main Intro Content Styling */
 main h1 {
-    font-size: 2.5rem;
-    color: #111;
-    margin-bottom: 15px;
+    font-family: var(--heading);
+    font-size: 2.75rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--c1);
+    margin-bottom: 18px;
+}
+
+main h1::after {
+    content: "";
+    display: block;
+    width: 48px;
+    height: 4px;
+    margin-top: 14px;
+    background: var(--accent);
+    border-radius: 2px;
 }
 
 main p {
     font-size: 1.15rem;
-    color: #555;
+    color: var(--text);
     margin-bottom: 20px;
+}
+
+.tagline {
+    font-family: var(--heading);
+    font-style: italic;
+    color: var(--c2);
+    font-size: 1.05rem;
+    margin-top: -6px;
 }
 
 /* Post list on posts.html */
@@ -81,43 +173,66 @@ main p {
 }
 
 .post-list li {
-    padding: 15px 0;
-    border-bottom: 1px solid #eaeaea;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule);
+}
+
+.post-list li:last-child {
+    border-bottom: none;
 }
 
 .post-list a {
-    font-size: 1.25rem;
+    font-family: var(--heading);
+    font-size: 1.3rem;
     font-weight: 600;
-    color: #0066cc;
-    text-decoration: none;
+    color: var(--c1);
+    border-bottom: 1px solid transparent;
 }
 
 .post-list a:hover {
-    text-decoration: underline;
+    color: var(--accent);
+    border-bottom-color: var(--accent-soft);
 }
 
 .post-date {
     display: block;
-    font-size: 0.9rem;
-    color: #888;
+    font-size: 0.85rem;
+    color: var(--c2);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 /* Individual post pages */
 article h1 {
-    font-size: 2.25rem;
-    color: #111;
-    margin-bottom: 5px;
+    font-family: var(--heading);
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--c1);
+    margin-bottom: 6px;
+}
+
+article h1::after {
+    display: none;
+}
+
+article > .post-date {
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--rule);
 }
 
 article h2 {
-    font-size: 1.5rem;
-    color: #111;
-    margin: 30px 0 10px;
+    font-family: var(--heading);
+    font-size: 1.6rem;
+    color: var(--c2);
+    margin: 36px 0 12px;
 }
 
 article p {
     font-size: 1.1rem;
-    color: #444;
+    color: var(--text);
     margin-bottom: 18px;
 }
 
@@ -128,24 +243,29 @@ article ul {
 
 article li {
     font-size: 1.05rem;
-    color: #444;
+    color: var(--text);
     margin-bottom: 8px;
 }
 
+article li::marker {
+    color: var(--accent);
+}
+
 article code {
-    font-family: SFMono-Regular, Menlo, Consolas, monospace;
+    font-family: var(--mono);
     font-size: 0.9em;
-    background-color: #eee;
-    padding: 2px 5px;
+    background-color: rgba(96, 108, 56, 0.12);
+    color: var(--c1);
+    padding: 2px 6px;
     border-radius: 4px;
 }
 
 /* GNN hyperparameter demo (posts/intro-to-gnns.html, js/intro-to-gnns.js) */
 #gnn-demo {
     margin: 30px 0;
-    padding: 20px;
-    background-color: #fff;
-    border: 1px solid #eaeaea;
+    padding: 22px;
+    background-color: var(--column);
+    border: 1px solid var(--rule);
     border-radius: 8px;
 }
 
@@ -160,28 +280,34 @@ article code {
     display: flex;
     flex-direction: column;
     font-size: 0.85rem;
-    color: #666;
+    color: var(--c2);
 }
 
 .gnn-control select {
     margin-top: 4px;
     padding: 6px 8px;
     font-size: 1rem;
-    border: 1px solid #ccc;
+    color: var(--c1);
+    border: 1px solid var(--rule);
     border-radius: 6px;
-    background-color: #fff;
+    background-color: var(--c5);
+}
+
+.gnn-control select:focus {
+    outline: 2px solid var(--c4);
+    outline-offset: 1px;
 }
 
 .gnn-mse {
     font-size: 1.15rem;
     font-weight: 600;
-    color: #111;
+    color: var(--c1);
 }
 
 .gnn-status {
     min-height: 1.4em;
     font-size: 0.9rem;
-    color: #888;
+    color: var(--c2);
 }
 
 .gnn-charts {
@@ -198,7 +324,7 @@ article code {
 
 .gnn-chart figcaption {
     font-size: 0.9rem;
-    color: #666;
+    color: var(--c2);
     margin-bottom: 6px;
 }
 
@@ -209,26 +335,52 @@ article code {
 }
 
 .gnn-axes line {
-    stroke: #999;
+    stroke: var(--c2);
     stroke-width: 1;
 }
 
 .gnn-axes text {
     font-size: 10px;
-    fill: #666;
+    fill: var(--c2);
 }
 
 .gnn-axis-label {
     font-size: 11px;
-    fill: #444;
+    fill: var(--c1);
 }
 
 .gnn-ref {
-    stroke: #bbb;
+    stroke: var(--c4);
     stroke-dasharray: 4 3;
 }
 
 .gnn-points circle {
-    fill: #0066cc;
-    fill-opacity: 0.6;
+    fill: var(--c1);
+    fill-opacity: 0.65;
+}
+
+/* Small screens */
+@media (max-width: 520px) {
+    body {
+        padding: 16px 12px;
+    }
+
+    .container {
+        padding: 24px 20px 32px;
+    }
+
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 32px;
+    }
+
+    main h1 {
+        font-size: 2.1rem;
+    }
+
+    article h1 {
+        font-size: 1.9rem;
+    }
 }
