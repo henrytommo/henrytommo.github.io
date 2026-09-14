@@ -28,9 +28,9 @@
                 <p class="tagline">A (very basic!) intro to GNNs</p>
 
                 <h2>Why Graph Neural Networks?</h2>
-                <p>ML models often use tabular data to make predictions. Which is great if your data is tabular, but not so great when it's not. For example, how do you encode
-                    a molecule in tabular data? You could maybe give coords of atoms (but these aren't static), or just extract various properties and use these as a proxy
-                    for the molecule. Graph neural networks avoid tabular data and encode data as graphs instead.
+                <p>ML models often use tabular data to make predictions. Which is great if your model is built from tabular data, but not so great when it's not.
+                    Instead, some data is better represented by graphs, where a graph consists of edges and nodes.
+                    Some examples of data that are difficult to represent in a table, but instead can be described by graphs:
                 </p>
                 <ul>
                     <li><strong>Social networks:</strong> people are nodes and their connections are edges. There would only be edges between people who know each other</li>
@@ -39,16 +39,19 @@
                 </ul>
 
                 <p>A great place to start is <a href="https://distill.pub/2021/gnn-intro/" target="_blank" rel="noopener">A Gentle Introduction to Graph Neural Networks</a>. I used this as a starting point,
-                    and also reproduced an interactive widget from that article with my own GNN - you can find it further down this page.
+                    and also created an interactive widget inspired by that article with my own GNN - you can find it further down this page.
                 </p>
 
                 <h2>The basics</h2>
-                <p>"Nodes" and "edges" were mentioned in the examples above. Using the social network example:</p>
+                <p>
+                    A GNN is a machine learning model that takes in some input data and outputs a prediction.
+                    In the process of training, the model learns from the structure of the graph to apply to unknown inputs.
+                    Let's look at some examples of key graph terminology using the examples from before:</p>
                 <dl>
                     <dt>Node</dt>
-                    <dd>A point on a graph that is connected to other nodes - a person.</dd>
+                    <dd>A point on a graph that is connected to other nodes. In the social network exmaple, this would be a person.</dd>
                     <dt>Edge</dt>
-                    <dd>The connector between two nodes - a relationship between two people.</dd>
+                    <dd>The connector between two nodes. For a social network, this is a relationship between two people.</dd>
                     <dt>Directed vs undirected</dt>
                     <dd>If an edge is undirected, direction doesn't matter: two people who know each other have an undirected edge between them.
                         If a bus route connects two stops in one direction but not the other, that edge is directed.</dd>
@@ -103,7 +106,10 @@
                 </figure>
 
                 <h2>Test out some hyperparams</h2>
-                <p>Below is an interactive widget to investigate how changing various parameters affects performance of the model.</p>
+                <p>Below is an interactive widget to investigate how changing various parameters affects performance of the model.
+                    Using the ESOL solubility dataset to predict solubility of a molecule. The graph shows predicted vs actual solubilities.
+                    Code can be found in the repo <a href="https://github.com/henrytommo/molecular-gnn">molecular-gnn</a>.
+                </p>
                 <ul>
                     <li><strong>Hidden channels:</strong> the size of the hidden feature vectors inside the hidden layers</li>
                     <li><strong>Layers:</strong> the number of layers the data passes through</li>
