@@ -66,7 +66,7 @@
                     <li><strong>Edge-level:</strong> predict a property of a single edge (for example, the relationship between two people)</li>
                 </ul>
 
-                <h2>How a GNN works</h2>
+                <h2>The simplest GNN</h2>
                 <p>A GNN takes in a graph and outputs a graph, finding relationships without changing connectivity.
                     Most GNNs use a message passing framework, which will be discussed here.
                 </p>
@@ -89,26 +89,155 @@
                     A way around this is to use a global representation of a graph, sometimes called a context vector, which is connected to all nodes and edges and can be used as a bridge to pass info.
                 </p>
 
-                <h3>Putting it together</h3>
-                <p>Just like a neural network, a GNN (or in this case, GCN - graph convolutional network) is made up of layers.
-                    As the features of a node pass through the layers, parameters control how this information propagates through the graph.
-                </p>
-                <p><var>W</var> is a weight matrix that is multiplied by the features, and <var>b</var> is the offset that is added. At each layer, <var>W</var> and <var>b</var> change the input matrix
-                    and pass it on to the next layer. The values of <var>W</var> and <var>b</var> per layer are updated via backpropagation.
-                </p>
-                <p>After the data has passed through the hidden layers, the dimensions of the hidden matrix need to be converted to
-                    the desired dimensions of the output matrix, in another layer with learnable weights and biases. The flow diagram below shows a flow through a classification problem.
+
+                <h2>How a GNN works</h2>
+                <p>We'll talk about a Graph Convolutional Network for this example, and use the example of acetic acid.</p>
+                <p>First, the acetic acid molecule needs to be converted to a graphical representation. We represent it as a graph, where atoms (excluding hydrogen) are nodes, and bonds are connectors.</p>
+
+                <h3>Setup</h3>
+                <p>We want to represent the nodes as a matrix, and the bonds as a matrix.</p>
+                <p>So, we have CH<sub>3</sub>C(=O)OH (SMILES <code>CC(=O)O</code>), and each atom has the following features: <code>atomic_number</code>, <code>degree</code> (total number of bonds, counting bonds to the implicit hydrogens), <code>charge</code>, <code>is_aromatic</code>.
+                    So we can represent each atom as follows:
                 </p>
 
-                <figure class="post-figure">
-                    <img src="../data/intro-to-gnns/gnn_flowchart_cleaned.png" alt="Flowchart of a message-passing GNN: input graph, stacked GNN layers updating node, edge and global embeddings, pooling, then a prediction head.">
-                    <figcaption>Flowchart of a classification GNN</figcaption>
-                </figure>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>idx</th><th>atom</th><th>atomic_number</th><th>degree</th><th>charge</th><th>is_aromatic</th><th>vector</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>0</td><td>CH<sub>3</sub></td><td>6</td><td>4</td><td>0</td><td>0</td><td><code>[6, 4, 0, 0]</code></td></tr>
+                            <tr><td>1</td><td>C=O (C)</td><td>6</td><td>3</td><td>0</td><td>0</td><td><code>[6, 3, 0, 0]</code></td></tr>
+                            <tr><td>2</td><td>=O</td><td>8</td><td>1</td><td>0</td><td>0</td><td><code>[8, 1, 0, 0]</code></td></tr>
+                            <tr><td>3</td><td>-OH (O)</td><td>8</td><td>2</td><td>0</td><td>0</td><td><code>[8, 2, 0, 0]</code></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p>These extra features represent information encoded in the nodes. This node data is represented by a tensor, <var>x</var>, where</p>
+                <p class="formula"><var>x</var> = [[6, 4, 0, 0], [6, 3, 0, 0], [8, 1, 0, 0], [8, 2, 0, 0]] &rarr; dimensions = (4, 4)</p>
+
+                <p>We've encoded our nodes as a matrix, now for edges.</p>
+                <p>We have 3 edges (excluding H): C<sub>0</sub>--C<sub>1</sub>, C<sub>1</sub>--O<sub>2</sub>, C<sub>1</sub>--O<sub>3</sub>. As our edges are undirected, we need to represent both directions - the reason for this will become clearer in a little bit.</p>
+                <ul class="plain">
+                    <li>bond 0 - 1 &rarr; <code>[0, 1], [1, 0]</code></li>
+                    <li>bond 1 - 2 &rarr; <code>[1, 2], [2, 1]</code></li>
+                    <li>bond 1 - 3 &rarr; <code>[1, 3], [3, 1]</code></li>
+                </ul>
+
+                <p>We represent this with a 6x2 matrix:</p>
+                <p class="formula"><code>edge_indices</code> = [[0, 1], [1, 0], [1, 2], [2, 1], [1, 3], [3, 1]]</p>
+                <p>As we're using pytorch and py geometric, we need to transform this to the correct format, i.e. a 2x6 matrix where the first row is the source atom and second row is the target atom index. So:</p>
+                <p class="formula"><code>edge_index</code> = [[0, 1, 1, 2, 1, 3], [1, 0, 2, 1, 3, 1]]</p>
+                <p>You can read it columnwise to get the bonds.</p>
+
+                <p class="aside">As an aside - we're representing bonds in this source atom/target atom 2xm type matrix. An alternative is to represent the edges as an adjacency matrix, where the index of each atom is along the top and sides, and there's a 0 if no bond and 1 if there is a bond. The obvious downside here is that if you have <var>n</var> atoms in your molecule, you will have an <var>n</var>x<var>n</var> matrix with loads of zeroes. The list way above is more efficient.</p>
+
+                <h3>Convolution</h3>
+                <p>This is the layer that makes the GNN a GCN. For other graph neural network types, this part will be different. This is the layer where each atom learns about its neighbours.</p>
+                <p>Some important notes before starting:</p>
+                <ul>
+                    <li>The atom matrix, <var>x</var>, and <code>edge_index</code> are kept separate</li>
+                    <li><code>edge_index</code> is used as a sort of lookup table so that the atoms can see who their neighbours are, and is NOT mutated</li>
+                    <li><var>x</var> is changed as it learns from its neighbours</li>
+                </ul>
+
+                <h4>1. First, add self-loops (<code>edge_index</code>)</h4>
+                <ul>
+                    <li>the <code>edge_index</code> matrix links different atoms together. Later, this will allow atoms to see the properties and features of adjacent atoms. but, we want each atom to keep its own properties. To do this, we need to add a self-loop, i.e. a bond between an atom and itself. This looks like adding <code>[0, 0], [1, 1]</code> etc to the <code>edge_index</code> and transforming as appropriate.</li>
+                </ul>
+
+                <h4>2. Linear transform (<var>x</var>)</h4>
+                <ul>
+                    <li><var>x</var> starts as a 4x4 matrix. This step linearly transforms it to a 4x<var>N</var> matrix - similar to a nn, this is where the weights and biases come in</li>
+                    <li>The transform is of the form
+                        <span class="formula inline"><var>z<sub>j</sub></var> = <var>W</var><var>h<sub>j</sub></var> + <var>b</var></span>,
+                        where <var>h</var> represents the original form of matrix <var>x</var>. So, as each row is an atom, it can be thought of as a transform applied to each atom.</li>
+                    <li><var>W</var> and <var>b</var> above are the weights and biases that are learned via backprop later on.</li>
+                    <li>The weight matrix that is multiplied by <var>x</var> determines the dimensions of the resultant <var>x</var> x <var>W</var> matrix, often referred to as hidden dimension</li>
+                    <li>Same <var>W</var> and <var>b</var> applied to each atom - this is because the atom matrices used as input can be of any size, so must be generic enough to handle this.</li>
+                    <li>This step ends up with 4 atoms, but instead of just the first 4 initial features, it can have lots more. These features may not represent physical properties</li>
+                </ul>
+
+                <h4>3. Normalisation coefficients (<code>edge_index</code>)</h4>
+                <ul>
+                    <li>This step computes the mixing weights between atoms. In the first convolution layer, atoms get information from their immediate neighbours. In the next layer, they get information from atoms that are bonded to their immediate neighbours, and so on. In general, the number of convolution layers should be smaller for small molecules, otherwise you risk averaging the properties of all the atoms over each other.</li>
+                    <li>The normalisation coefficient is calculated as:
+                        <span class="formula block">norm(<var>i</var>,<var>j</var>) = 1 / &radic;(<var>d&#770;<sub>i</sub></var> &times; <var>d&#770;<sub>j</sub></var>)</span>
+                        where <var>d&#770;<sub>i</sub></var> is the number of neighbours of atom <var>i</var> + 1 (the +1 is for the self loop). Note this is the <em>graph</em> degree, i.e. heavy-atom neighbours only - not the <code>degree</code> feature in the table above, which counts hydrogens too.</li>
+                    <li>So for example, atom 0, the CH<sub>3</sub> carbon, has <var>d</var> = 1 (1 neighbour), so <var>d&#770;<sub>0</sub></var> = 2. Atom 1, the C=O carbon, has <var>d</var> = 3 and therefore <var>d&#770;<sub>1</sub></var> = 4
+                        <ul>
+                            <li>this means that norm(0, 0) = 1/&radic;(2 &times; 2) = 0.5</li>
+                            <li>norm(0,1) = 1/&radic;(2x4) = 0.354</li>
+                        </ul>
+                    </li>
+                    <li>These normalisation weights determine how much of each neighbour to aggregate</li>
+                    <li>normalisation is an important step - it means that atoms with a high valency don't dominate</li>
+                </ul>
+
+                <h4>4. Aggregate (<var>x</var>)</h4>
+                <ul>
+                    <li>Next, the normalisation coefficients we calculated earlier are used in the aggregation of the features of the atoms and their neighbours. This is done using the formula:
+                        <span class="formula block"><var>h<sub>i</sub></var>&prime; = <span class="sum">&Sigma;<sub><var>j</var> &isin; N(<var>i</var>) &cup; {<var>i</var>}</sub></span> norm(<var>i</var>,<var>j</var>) &middot; <var>z<sub>j</sub></var></span>
+                    </li>
+                    <li>i.e., the sum over atom <var>i</var>'s neighbours plus itself (feature vector <var>z<sub>j</sub></var> after linear transform) multiplied by the norm.</li>
+                    <li>So for atom 0 (CH<sub>3</sub>): neighbours = self + atom 1
+                        <span class="formula block"><var>h<sub>0</sub></var>&prime; = 0.5 &times; <var>z<sub>0</sub></var> + 0.354 &times; <var>z<sub>1</sub></var></span>
+                        i.e. norm(0,0) &times; <var>z<sub>0</sub></var> + norm(0,1) &times; <var>z<sub>1</sub></var>
+                    </li>
+                    <li>note - this is where storing the bonds in both directions comes in. With PyG's default source &rarr; target flow, the messages arriving at atom <var>i</var> are the edges that END at <var>i</var>, i.e. the second row of <code>edge_index</code>. So atom 0 collects the column [1, 0] and picks up norm(0,1) &times; <var>z<sub>1</sub></var>, while atom 1 collects the column [0, 1] and picks up norm(1,0) &times; <var>z<sub>0</sub></var>. The coefficient is symmetric, norm(<var>i</var>,<var>j</var>) = norm(<var>j</var>,<var>i</var>), so which way round you read it makes no difference - but if only one direction were stored, one of the two atoms would never see the other at all.</li>
+                    <li>after aggregation, dimensions remain the same - in this case, 4 x hidden dim of weight matrix <var>W</var>, but it now contains the norm-weighted <var>z</var>-vals of adjacent atoms</li>
+                </ul>
+
+                <h4>5. ReLU + dropout</h4>
+                <ul>
+                    <li>similar to nn, adds non-linearity</li>
+                    <li>Dropout: each number has 10% chance of being set to zero. Survivors scaled up to compensate, so that the expected sum stays the same. This happens during training only - at inference dropout is switched off and nothing is scaled.</li>
+                </ul>
+
+                <p class="callout">Steps 1-5 are ONE CONVOLUTION LAYER. Typically, a GNN will have several of these layers. The outputs are: 4 x hidden_dim node matrix + unchanged <code>edge_index</code></p>
+
+                <h4>6. Pooling</h4>
+                <ul>
+                    <li>After several convolution layers, we now have 4 transformed atom vectors, with their length equal to the hidden dimension of weight matrix <var>W</var>.</li>
+                    <li>However, for the output, we want to combine these 4 atoms to one molecule vector.</li>
+                    <li>There are several different types of pooling, but for now we will talk about global mean pool, which averages the atom vectors element-wise.</li>
+                    <li>So, we end up with a 1 x hidden_dim vector</li>
+                    <li>This is the "molecule fingerprint" learned by GCN</li>
+                    <li>note - PyG batches vectors for speed, but they always stay independent</li>
+                </ul>
+
+                <div class="aside">
+                    <p><strong>An aside - fusion</strong></p>
+                    <ul>
+                        <li>in some cases, for example my <a href="qsar-biodegradation.html" target="_blank" rel="noopener">QSAR biodegradation project</a>, I combine the graph with extra tabular features.</li>
+                        <li>This can be done by a small 2-layer neural net:
+                            <ol>
+                                <li>Linear transform: mix tabular and graph vector to a single vector</li>
+                                <li>ReLU</li>
+                                <li>Dropout</li>
+                                <li>Linear transform to map outputs to 1 output, i.e. the prediction.</li>
+                            </ol>
+                        </li>
+                        <li>Without extra tabular features, this would just be the one step of mapping the molecule vector to 1 output</li>
+                    </ul>
+                </div>
+
+                <h4>7. Output</h4>
+                <ul>
+                    <li>As above, the molecular vector needs to be converted to an output, the type of which depends on whether it's a classification or regression problem. For regression, the final linear layer's output is the prediction directly. For classification, that raw output <em>is</em> the logits; these are converted to probabilities with a sigmoid (binary) or softmax (multi-class). Note that the standard losses (<code>BCEWithLogitsLoss</code>, <code>CrossEntropyLoss</code>) take the logits, not the probabilities.</li>
+                </ul>
+
+                <h3>Training</h3>
+                <p>Steps 1-7 outline one pass of the GCN for one molecule. During training, each labelled molecule will be passed through the GCN, with loss calculated on the predicted outputs vs actual outputs.
+                    This is done over many epochs, where the weight matrices at each layer are trained through backpropagation.
+                </p>
+                <p>The entire GCN is differentiable, and as the layers are in sequence, only one sweep of backpropagation is needed to calculate the gradients for every layer. The optimiser then uses those gradients to update the weights.</p>
 
                 <h2>Test out some hyperparams</h2>
                 <p>Below is an interactive widget to investigate how changing various parameters affects performance of the model.
                     Using the ESOL solubility dataset to predict solubility of a molecule. The graph shows predicted vs actual solubilities.
-                    Code can be found in the repo <a href="https://github.com/henrytommo/molecular-gnn">molecular-gnn</a>.
+                    Code can be found in the repo <a href="https://github.com/henrytommo/molecular-gnn" target="_blank" rel="noopener">molecular-gnn</a>.
                 </p>
                 <ul>
                     <li><strong>Hidden channels:</strong> the size of the hidden feature vectors inside the hidden layers</li>

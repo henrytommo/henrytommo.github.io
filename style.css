@@ -268,6 +268,167 @@ article dd {
     border-left: 3px solid var(--rule);
 }
 
+article h4 {
+    font-family: var(--heading);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--c1);
+    margin: 24px 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--rule);
+}
+
+/* Maths: inline keeps the line, block sits on its own centred line */
+.formula {
+    font-family: var(--mono);
+    font-size: 1rem;
+    color: var(--c1);
+    white-space: nowrap;
+}
+
+p.formula,
+.formula.block {
+    display: block;
+    margin: 12px 0;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-left: 3px solid var(--c4);
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.formula.inline {
+    display: inline-block;
+    padding: 0 4px;
+    white-space: nowrap;
+}
+
+.formula var {
+    font-family: var(--mono);
+    font-style: italic;
+}
+
+.formula .sum {
+    font-size: 1.25em;
+    line-height: 1;
+}
+
+.formula .sum sub {
+    font-size: 0.5em;
+}
+
+/* Tables */
+.table-wrap {
+    overflow-x: auto;
+    margin: 18px 0;
+}
+
+article table {
+    border-collapse: collapse;
+    font-size: 0.95rem;
+    min-width: 100%;
+}
+
+article th,
+article td {
+    padding: 7px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+}
+
+article th {
+    font-weight: 600;
+    color: var(--c1);
+    border-bottom: 2px solid var(--c2);
+}
+
+article tbody tr:hover {
+    background: var(--surface);
+}
+
+/* numeric tables: right-align the figures, keep the label column left */
+article table.numeric td:not(:first-child),
+article table.numeric th:not(:first-child) {
+    text-align: right;
+}
+
+/* free-text cells may wrap instead of forcing the table wide */
+article table td.wrap {
+    white-space: normal;
+    min-width: 15em;
+}
+
+article .caption {
+    font-size: 0.85rem;
+    color: var(--c2);
+    letter-spacing: 0.03em;
+    margin: -6px 0 0;
+}
+
+/* Asides and callouts */
+article .aside {
+    font-size: 1rem;
+    color: var(--c2);
+    margin: 20px 0;
+    padding: 14px 18px;
+    background: var(--surface);
+    border-radius: 6px;
+}
+
+article .aside p:last-child,
+article .aside ul:last-child {
+    margin-bottom: 0;
+}
+
+article .callout {
+    margin: 24px 0;
+    padding: 12px 16px;
+    border-left: 4px solid var(--c3);
+    background: var(--surface);
+    font-size: 1.05rem;
+}
+
+article ul.plain {
+    list-style: none;
+    padding-left: 0;
+}
+
+/* nested lists */
+article ul ul {
+    margin: 6px 0 4px;
+}
+
+article ul ul li {
+    font-size: 1rem;
+    margin-bottom: 4px;
+}
+
+/* method reference: dt is the method name, dd holds its bullet list */
+article .methods dd ul {
+    margin: 4px 0 0;
+    padding-left: 20px;
+}
+
+article .methods dd li {
+    font-size: 1rem;
+    margin-bottom: 4px;
+}
+
+article hr {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 40px 0;
+}
+
+/* draft highlights - errors flagged for the author to fix */
+article mark {
+    background-color: var(--c4);
+    color: var(--c1);
+    padding: 0 3px;
+    border-radius: 3px;
+}
+
 article .note {
     font-size: 0.9rem;
     color: var(--c2);

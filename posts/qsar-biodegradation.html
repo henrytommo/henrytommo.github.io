@@ -24,12 +24,322 @@
                 <h1>QSAR Biodegradation Prediction</h1>
                 <span class="post-date">September 2026</span>
 
-                <p>A little while ago, I followed a great tutorial on writing up a simple graph neural network from scratch. I was keen to put these learnings about 
-                    GNNs into chemical context, and at the time was reading some cool stuff about predicting the biodegradability about certain compounds using ML.
-                    A quick Google search found the QSAR dataset, and I jumped right in to try out my new GNN skills. However, my choice of dataset was probably more 
-                    suited to a different type of model (also tried that out); the great thing about GNNs for molecular prediction is the properties they "infer" within
-                    their hidden layers. This dataset already had those properties as part of the tabular dataset, and those properties calculated by "real" chemistry
-                    will probably outperform whatever relationships are found in my simple model. Regardless, it was a great learning experience.<p>
+                <p>A little while ago, I followed a tutorial on writing up a simple graph neural network from scratch. I was keen to put these learnings about GNNs into chemical context,
+                    and at the time was reading some cool stuff about predicting the biodegradability of certain compounds using ML. A quick Google search found the QSAR dataset,
+                    and I jumped right in to try out my new GNN skills. However, my choice of dataset was probably more suited to a tabular model. The QSAR dataset already had those properties
+                    as part of the tabular dataset, and those properties calculated by "real" chemistry will probably outperform whatever relationships are found in my simple model.
+                    Regardless, it was a great learning experience.
+                </p>
+
+                <p>I'll run through my process of this project, including my thoughts and mistakes I made along the way, along with what I'd do next time.
+                    Code can be found at <a href="https://github.com/henrytommo/qsar-biodegradation" target="_blank" rel="noopener">qsar-biodegradation</a>.
+                </p>
+
+                <h2>First, the dataset</h2>
+                <p>The dataset, found <a href="https://pubmed.ncbi.nlm.nih.gov/23469921/" target="_blank" rel="noopener">here</a>, contains 1055 molecules, described by 41
+                    quantitative structure-activity relationship (QSAR) features and with a binary label of readily biodegradable (RB) or not readily biodegradable (NRB).
+                </p>
+                <ul>
+                    <li>Biodegradation is tested by OECD Test no. 302:
+                        <ul>
+                            <li>biodegradation under aerobic conditions in dark/diffuse light by microorganisms</li>
+                            <li>RB if 60% of theoretical oxygen demand or organics carbon is consumed/converted within 28 days (with degradation within a 10 day window after it first reaches 10%)</li>
+                        </ul>
+                    </li>
+                    <li>features contain things like:
+                        <ul>
+                            <li>num of heavy atoms</li>
+                            <li>num quaternary C atoms</li>
+                            <li>num of substituted benzenes</li>
+                            <li>% of C atoms</li>
+                            <li>num of halogens</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p>i.e. - all 2D features. No stereochemistry: as this dataset shows molecules broken down by microorganisms, i.e. enzyme-using organisms, I assumed stereochem
+                    would be a good indicator due to the selective nature of enzymes. This led me down one rabbit hole investigating GINEConvs, but unfortunately only about 1% were
+                    stereoactive and therefore this didn't give the performance uplift I was hoping for.
+                </p>
+                <p>First thoughts were that features such as number of halogens would be a good indicator of biodegradability (more halogens = less biodegradable). None of the
+                    features included any electronic properties, and although it's been a long time since I learnt about DFT, I was keen to look into it (and perhaps explore
+                    more in further projects). I mostly wanted a feature that could describe HOMO-LUMO gap, to try and give an idea of how reactive a molecule was, and in the process
+                    found some other potentially useful features. Additionally, the labels are calculated by % of oxygen used etc, so potentially some misclassifications if compounds
+                    are close to the boundary, so this was something to keep in mind. The class imbalance was about 34% RB and 66% NRB, so need to keep this imbalance in mind.
+                </p>
+
+                <h2>Next, data pipeline</h2>
+                <p>Although this was a project designated as a GNN learning exercise, when I was reading around the QSAR dataset I saw that XGB and KNN models gave good results.
+                    I wanted to set up a data pipeline that would allow me to process the data for XGB, GCN and logreg in a reusable way, perhaps with a flag to denote graph data.
+                    This was the part of the project where Claude was most heavily involved, for going through the various approaches for the Dataset class I wanted to create.
+                </p>
+                <p>As there were only about 1055 molecules, I wanted some kind of cross-validation/bootstrapping. Went with k-fold cross validation in the end (simpler stratification),
+                    but ran 5 folds 3 times to account for worse variance.
+                </p>
+                <p>I wanted my Dataset class to:</p>
+                <ul>
+                    <li>be reusable across my 3 model types</li>
+                    <li>be set up for k-fold cv</li>
+                    <li>handle errors (although, ended up just dropping errors as the dataset was clean already)</li>
+                    <li>handle adding extra features (xtb, rdkit)</li>
+                    <li>allow for feature selection</li>
+                    <li>have a robust scaling/transforming step that happened within each fold</li>
+                </ul>
+                <p>I began experimenting with all 41 QSAR features, plus 9 xtb features and 3 rdkit features. Only later in my experimentation did I introduce simple feature ranking
+                    and subset selection (using xgb to select features for GCN - for ease).
+                </p>
+                <p>I found a <a href="https://pubs.acs.org/jcisd8/article-abstract/53/4/867/1222710/Quantitative-Structure-Activity-Relationship?redirectedFrom=fulltext" target="_blank" rel="noopener">SMILES dataset</a>
+                    corresponding to the QSAR dataset I already had, allowing me to create my GCN. The SMILES representations were used for the xtb calcs to generate the dft features,
+                    and also as the basis of the GCN. Each SMILES representation was converted to:
+                </p>
+                <ul>
+                    <li><code>x</code>: (n_atoms, 4), where the 4 features are:
+                        <ul>
+                            <li>atomic number (6 for carbon etc). This does mean that atomic number is continuous, whereas it should probably be categorical as there isn't really a linear relationship in atomic number</li>
+                            <li>number of connections</li>
+                            <li>formal charge</li>
+                            <li>binary indicator <code>is_aromatic</code></li>
+                        </ul>
+                    </li>
+                    <li>so, no info on type of bond (single, double). hence trying out GINEConv, with poor results</li>
+                </ul>
+
+                <h2>The Dataset class</h2>
+                <p>The dataset class is a reusable way to set up the data for any of the three model experiments.</p>
+
+                <h3>General</h3>
+                <dl class="methods">
+                    <dt><code>load</code></dt>
+                    <dd>
+                        <ul>
+                            <li>specify graph true/false</li>
+                            <li>loads graph from SMILES if true, calculating xtb/rdkit features</li>
+                            <li>else, doesn't load graph, but still builds xtb/rdkit feats</li>
+                        </ul>
+                    </dd>
+                    <dt><code>is_graph</code></dt>
+                    <dd>
+                        <ul>
+                            <li>self-explanatory</li>
+                        </ul>
+                    </dd>
+                    <dt><code>dims</code></dt>
+                    <dd>
+                        <ul>
+                            <li>property (read only)</li>
+                            <li>just gets num features, calculated depending on graph or tabular</li>
+                        </ul>
+                    </dd>
+                    <dt><code>feature_frame</code></dt>
+                    <dd>
+                        <ul>
+                            <li>returns tab view of dataset, no matter if graph or not</li>
+                            <li>used for ranking (GCN ranking uses xgb for simplicity), but takes from the GCN dataset to account for dropped rows etc</li>
+                        </ul>
+                    </dd>
+                    <dt><code>like</code></dt>
+                    <dd>
+                        <ul>
+                            <li>helper method to create a new dataset with same feature names and structure, but new data</li>
+                            <li>used for the cv splits etc</li>
+                            <li>uses mutable lists, fine for now but should flag this in the future</li>
+                        </ul>
+                    </dd>
+                </dl>
+
+                <h3>Splitting + scaling</h3>
+                <dl class="methods">
+                    <dt><code>holdout</code></dt>
+                    <dd>
+                        <ul>
+                            <li>returns tuple (train_data, test_data)</li>
+                            <li>NO SCALING, only splitting</li>
+                            <li>80:20 split (and then train is split into train + val in another func)</li>
+                            <li>Due to class imbalance, stratification was done on labels. note: no stratifying by skeleton structure, keeping simple for now.</li>
+                            <li>reproducible</li>
+                            <li>different splitting for tab and graph</li>
+                        </ul>
+                    </dd>
+                    <dt><code>scale</code></dt>
+                    <dd>
+                        <ul>
+                            <li>fits scaler on training set (never on val/test)</li>
+                            <li>only persists for inference, otherwise discarded between the cv folds</li>
+                        </ul>
+                    </dd>
+                    <dt><code>transform</code></dt>
+                    <dd>
+                        <ul>
+                            <li>never called on training data, just applies the already fit scaler on val/test data</li>
+                        </ul>
+                    </dd>
+                    <dt><code>cv_folds</code></dt>
+                    <dd>
+                        <ul>
+                            <li>generator to give scaled (train, val) pairs</li>
+                            <li>ONLY used on train and val, never test</li>
+                            <li>splits training data into 5 folds and produces (train, val) pair for both</li>
+                            <li>folds stratified by label</li>
+                            <li>fit scaler on train, then applies to val, then discards so that the scaler isn't applied across folds. by keeping scaling within each fold, avoid leakage</li>
+                            <li>sample is without replacement, so each fold is used for val once and train 4 times - hence running 3x with a random seed to try and get around this</li>
+                        </ul>
+                    </dd>
+                    <dt><code>subset</code></dt>
+                    <dd>
+                        <ul>
+                            <li>feature selection</li>
+                            <li>cap and n feats</li>
+                        </ul>
+                    </dd>
+                </dl>
+
+                <h2>dxtb</h2>
+                <p>Brief overview - I wanted to include some electronic feats, and from some minimal reading around, the dxtb python package seemed the quickest and easiest to use.
+                    I wanted mainly to have a feature that represented HOMO-LUMO gap, to help indicate how easily SET would happen (often the case for enzyme catalysed reactions),
+                    but there were other features that could be calculated too, so included these. It's a semi empirical quantum chemistry method - i.e. not too crazy compute time.
+                </p>
+                <p>Features I added:</p>
+                <ul>
+                    <li>HOMO-LUMO gap for reactivity, given we are looking at molecules being broken down</li>
+                    <li>wbo total, max: measure of bond multiplicity/strength. No features that described this yet, and as mentioned corresponds to how easy something may be to break down</li>
+                    <li>dispersion energy - might give some info about polarisability</li>
+                    <li>delta SCF feats:
+                        <ul>
+                            <li>ionisation potential - ease of oxidation</li>
+                            <li>electron affinity - ease of reduction</li>
+                            <li>electrophilicity</li>
+                            <li>condensed fukui funcs: how reactive</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p>These dxtb calcs took a little longer, so there is a cache so that the same feats don't have to be re-calculated on each experiment when the training data is the same.
+                    Also note: there were some crazy high vals for IP and EA, which were discarded.
+                </p>
+                <p>Although these features ranked fairly high in feature importance, they didn't really push up the metrics. Likely being inferred elsewhere.</p>
+
+                <h2>Model training and tuning</h2>
+                <p><code>tune.py</code> finds the best configs for the model (without taking too long). It finds the hyperparams, scaling method, and optionally how many features. Outputs are written to <code>config/best_params.yml</code>.</p>
+                <p>Process:</p>
+                <ul>
+                    <li>All tuning happens on train only, so set aside the test set</li>
+                    <li>Create hyperparameter grid (capping at <var>n</var> features if there's a cap)</li>
+                    <li>Random search: a full search over all possible combos would be huge. Random sampling may not give the best configuration, but it's much quicker to get to a good config with far fewer trials. Sorted by (mean) f1</li>
+                    <li>For each sampled config, 3 partitions of 5 folds are tested
+                        <ul>
+                            <li><code>rank_features</code> is called within the fold loop, so features are re-ranked separately per fold - no leakage</li>
+                            <li>repeated cv x3 and take mean per param config</li>
+                            <li>xgb feature ranking is used for GCN - quicker</li>
+                        </ul>
+                    </li>
+                    <li>Once best config is chosen, the actual feature list is produced by ranking on the full training set and taking top-N</li>
+                    <li>outputs are written to <code>config.yml</code></li>
+                </ul>
+
+                <h2>Quick aside - ModelSpec</h2>
+                <div class="aside">
+                    <ul>
+                        <li>A class that contains info about a model</li>
+                        <li>Allows different types of models to train in the same pipeline - when setting up the class, can pick the relevant methods for the model.</li>
+                        <li>This just means you can add a completely different type of model and it would still work with the pipeline.</li>
+                        <li>Probably slightly overkill for just 3 models, but useful if trying loads of different models and makes the pipeline code a bit simpler, which would be easier for later maintaining (i.e., just need to know how one pipeline works, rather than 3, and the individual parts are much smaller and easier to look into)</li>
+                    </ul>
+                </div>
+
+                <h2>Val_size</h2>
+                <ul>
+                    <li>After best params have been chosen by cross validation, number of epochs and number of trees need to be found for gcn and xgb, respectively.</li>
+                    <li>As the final fitting is on a bigger data set, can't use the stopping point from the cv - only use hyperparams</li>
+                    <li>For xgb and gcn, <code>val_size</code> gives a 15% validation set for early stopping (e.g. if validation score stops improving)</li>
+                    <li>GCN also has a patience loop, where if validation loss doesn't improve after 15 epochs it stops.</li>
+                </ul>
+
+                <h2>Comparing models</h2>
+                <ul>
+                    <li>Once config has been found by <code>tune.py</code>, <code>compare.py</code> runs each model over 10 splits (80/20 train/test)</li>
+                    <li>model is trained on that train set and scored against the test</li>
+                    <li>Across all 3 models with all relevant metrics</li>
+                    <li>However, xgb and logreg use the same seed (i.e. tested on the same set). As they use the exact same features, it means they can be compared like for like. As GCN uses graph features also, it's not really directly comparable.</li>
+                    <li>The limitation here is that the 10 seeds are not independent - no folds. But on a fairly small dataset of ~1000 rows it allows the models to be trained on enough data.</li>
+                </ul>
+
+                <h2>Metrics</h2>
+                <ul>
+                    <li>F1 score</li>
+                    <li>Precision</li>
+                    <li>Recall</li>
+                    <li>ROC AUC</li>
+                    <li>PR AUC</li>
+                </ul>
+                <p>PR AUC included as well as ROC AUC - ROC AUC can inflate true negative, so include PR AUC.</p>
+
+                <h2>Inference</h2>
+                <p>Now we've looked through the data pipeline and model training. Next is inference. Instead of using a saved model, the inference pipeline trains a model based on the chosen configurations and infers using that.
+                    For now will keep this way as it doesn't take too long to train. If making multiple predictions, there's a <code>predictor</code> param that can be passed so that you're not re-fitting each time.
+                    This is probably the part that I would change, but as this was more of an experimental project it's ok for now.
+                </p>
+                <p>Included in the inference part of the project is also an option for using ensemble methods. <code>EnsemblePredictor</code> can take the average of two models and predict using that - the ensemble averages the probabilities, not the labels.
+                    Due to the set up of the data pipeline, both models can share the same loaded dataset to avoid repeated processing time.
+                </p>
+                <p>xgb + logreg ensemble gave similar performance to all 3 models in an ensemble, and as the GCN is slightly more complex it could be dropped.</p>
+                <p>Similar to training, for a new dataset, if there are molecules whose xtb feats fail, there will be no prediction for that molecule. But, the output csv will have the same number of rows as the input, and any molecules that fail are marked "abstain" for further investigation.</p>
+                <p>The SMILES data I used for this also contained 670 external molecules. Validating the model on these shows that both the xgb + logreg ensemble and the gcn match their internal CV metrics
+                    (ensemble F1 around 0.77, ROC AUC 0.92, and gcn around F1 0.79, ROC AUC 0.93), so that's a good sign that there wasn't too much overfitting going on.
+                    GCN is actually a little better than the ensemble for the external dataset, so perhaps it's capturing some structural features that transfer better to new molecules.
+                    Quite a small gain for a more complex model, but interesting nonetheless.
+                </p>
+
+                <h2>Results</h2>
+
+                <h3>Params</h3>
+                <div class="table-wrap">
+                    <table class="params">
+                        <thead>
+                            <tr><th>Model</th><th>Key params</th><th>Scaling</th><th>Selection CV F1</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>xgb</code></td><td class="wrap">max_depth 6, lr 0.2, subsample 0.6, gamma 1.0</td><td>standardize</td><td>0.805</td></tr>
+                            <tr><td><code>logreg</code></td><td class="wrap">C 3, l1_ratio 1.0 (pure L1)</td><td>normalize</td><td>0.789</td></tr>
+                            <tr><td><code>gcn</code></td><td class="wrap">hidden 64, 3 layers, dropout 0.1, lr 0.001</td><td>standardize</td><td>0.778</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3>Internal comparison - 10 seeds</h3>
+                <p class="caption">mean &plusmn; std</p>
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <thead>
+                            <tr><th>Model</th><th>F1</th><th>Precision</th><th>Recall</th><th>ROC-AUC</th><th>PR-AUC</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>xgb</code></td><td>0.767 &plusmn; 0.020</td><td>0.772 &plusmn; 0.045</td><td>0.766 &plusmn; 0.042</td><td>0.910 &plusmn; 0.013</td><td>0.863 &plusmn; 0.028</td></tr>
+                            <tr><td><code>logreg</code></td><td>0.789 &plusmn; 0.028</td><td>0.733 &plusmn; 0.036</td><td>0.856 &plusmn; 0.040</td><td>0.923 &plusmn; 0.016</td><td>0.870 &plusmn; 0.027</td></tr>
+                            <tr><td><code>gcn</code></td><td>0.769 &plusmn; 0.031</td><td>0.707 &plusmn; 0.045</td><td>0.846 &plusmn; 0.040</td><td>0.905 &plusmn; 0.024</td><td>0.836 &plusmn; 0.048</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p>Logreg is best internally, with higher recall and lower precision: i.e. catches more of the readily biodegradable molecules, but it does have more false positives.
+                    xgb is more balanced, and gcn has lowest mean and highest variance (note that because the 10 seeds use the same set of molecules, the standard deviation tells more about stability rather than it being a confidence interval).
+                </p>
+
+                <h3>External validation</h3>
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <thead>
+                            <tr><th>Pipeline</th><th>F1</th><th>Precision</th><th>Recall</th><th>ROC-AUC</th><th>PR-AUC</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>ensemble (<code>xgb</code>+<code>logreg</code>)</td><td>0.769</td><td>0.763</td><td>0.775</td><td>0.921</td><td>0.814</td></tr>
+                            <tr><td><code>gcn</code></td><td>0.785</td><td>0.796</td><td>0.775</td><td>0.926</td><td>0.825</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p>Models generalise well: performance metrics are comparable to internal ones.
+                    Although internally GCN was weakest, it seems to predict a tiny bit better than the ensemble. It is quite a small increase, and would need a larger validation set to make more conclusions.
+                </p>
+
+                <p>Read below for a summary of the above.</p>
+
+                <hr>
 
                 <h2>Data prep</h2>
                 <ul>
