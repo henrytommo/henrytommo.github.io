@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Informed Ligand-Protein Binding Neural Network</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <div class="logo">chem <span class="plus">+</span> ml</div>
+            <nav>
+                <ul>
+                    <li><a href="../index.html">Home</a></li>
+                    <li><a href="../posts.html" class="active">Posts</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <article>
+                <h1>Physics Informed Ligand-Protein Binding Neural Network</h1>
+                <span class="post-date">October 2026</span>
+
+                <p class="callout">This project is in progress and will be periodically updated.</p>
+
+                <p>Following my <a href="qsar-biodegradation.html" target="_blank" rel="noopener">biodegradation prediction project</a>, I wanted to try out another GCN application but using biological data.
+                    I thought it'd be cool to look at ligand-protein bonding: taking the chemical formula for a ligand and a protein and seeing if they would bind. This would have applications in any kind of experimental drug binding experiment.
+                    Initial thoughts were: how would I create a model that could take a distinct ligand molecule and protein and fit them together in the correct orientation, and then represent this as a graph?
+                    From a little bit of reading around, this process is achieved by "relaxing" the ligand molecule so it is in a conformation that can react with the binding site of a protein.
+                    I decided that this so called "docking" could be a v2 of this project - instead, I would start with my ligand-protein complexes pre-bound and make a model to predict the binding affinities of the already formed complex.
+                    Fortunately, the PDBbind+ v2020.R1 dataset had exactly that: ligand-protein complexes with atom coordinates on the same coordinate frame. Code for this project can be found <a href="https://github.com/henrytommo/ligand-binding-gcn-physics-informed" target="_blank" rel="noopener">here</a>.
+                </p>
+
+                <p>I was also interested in trying out a physics-informed aspect in this GCN. Training a GCN without this leaves the predictions at the mercy of the relationships learnt in the hidden layers.
+                    There's no physical framework to indicate, for example, that the binding affinity between a ligand and a protein is the same no matter the rotation of the molecules (as long as their relative position is the same).
+                    A plain GCN may not infer this, and may predict different affinities for the same complex rotated in space, as it will have different coordinates.
+                    Adding a physical aspect means that new, unseen protein-ligand complexes will still obey simple physical rules, restraining the model from making more far fetched predictions (or so the hope is).
+                    On top of all that, a hybrid approach combines some of the accuracy of more computationally expensive physics-based models with the relative speed of ML models.
+                    All this, of course, but the physics branch needs to earn its place.
+                </p>
+
+                <p>A further aspect I also wanted to cover is one that was missing from my previous GCN exploits: structural similarity between compounds in the train and test set.
+                    This is especially relevant to proteins (although also relevant to organic compounds with similar backbones and functional groups).
+                    As proteins are huge molecules, different proteins often overlap in similarity, containing repeated sequences of amino acid residues (k-mers).
+                    If you train your model on a family of very similar proteins, and then predict on yet more of this family, the model will be mostly repeating what it saw in the training set. Essentially data leakage.
+                    There's something called the "twilight zone" in protein similarity, where around 20-30% similarity, it's very difficult to predict if proteins are homologous (i.e., share an evolutionary ancestor).
+                    We don't really want to split two homologous proteins between the train and test set, because they may interact with the ligand in a similar way and therefore our predictions would be better than they would be for a different, non-homologous protein.
+                    A widely accepted way to look at sequence similarity is using MMseqs2, which I'll discuss further below.
+                </p>
+
+                <h2>Getting started</h2>
+                <p>This project will be a lot of experimentation, so given I'd spent some time thinking about an experimental setup for my biodegradation project, I wanted something similar for this.
+                    I reused some of the logic from that (in some places simpler - all models would be GCNs so I didn't have to worry about xgb/logreg architectures), and began the first experiment as a plain GCN vs a physics GCN to make sure it was worth it.
+                    But first, there were decisions to be made about data processing, training splits, and physics features.
+                </p>
+
+                <h2>The Data</h2>
+                <ul>
+                    <li>I downloaded the free PDBbind+ v2020.R1 dataset. I'll be using the ligand files plus the pocket files for the graphs - this means the graphs are much smaller as they only contain atoms in the reactive pocket of the protein rather than the entire thing. The full protein files were used still in the MMseqs2 protein similarity step.</li>
+                    <li>I used biopandas to help me parse the <code>.pdb</code> files. I didn't spend much time looking at alternatives, this seemed widely used and seemed to do everything I needed. I used RDKit for the ligand molecules as I'm already familiar with that.</li>
+                    <li>The target for this regression GCN will be pK<sub>d</sub>, i.e. the binding affinity. There are a few different measurements in the PDB files: K<sub>i</sub>, K<sub>d</sub>, etc. Although it cuts out a lot of training data, I started with K<sub>d</sub> (transformed to pK<sub>d</sub> so it would be on a tighter scale). I might need to revisit these other measurements if I need more training data - using just K<sub>d</sub> gives me just under 7k complexes which should be enough to get something done, depending on how many homologous proteins there are.</li>
+                    <li>Removed H (and D) from the proteins (inferred), and removed water as a solvent - kept other solvents in case they affect the binding.</li>
+                </ul>
+
+                <h2>Training Splits</h2>
+                <p>The splitting methodology is really important, as discussed above. Splitting randomly risks homologous proteins being spread between train and test, possibly artificially inflating test scores and overfitting on certain protein families.
+                    But, before splitting could begin, I needed to find a way to measure similarity.
+                </p>
+                <ul>
+                    <li><strong>MMseqs2:</strong> a program that clusters similar proteins. It does this by looking at strings of amino acids, and looking for similar substrings (k-mers) across different proteins. It has a lookup of similar enough k-mers and matches on these. It uses both gapped and ungapped matching, i.e. shifting to make gaps if there are matching amino acids later on - this accounts for proteins that are similar but may not have identical amino acid sequence orders.</li>
+                    <li>looking for above 30% similarity ("twilight zone") - below 25-30% similarity, structures are not similar.</li>
+                    <li>6,934 unique complexes, with 4,944 distinct proteins (same protein with different ligands). Using MMseqs2 with 30% identity: 1,251 clusters, of which the largest has 1,475 members. 588 clusters of one, and median cluster size is 2.</li>
+                    <li>I chose to put the biggest family in train, and then spread them randomly between train, val and test until each was about the proportion 80/10/10. This does mean that the biggest family will never get tested on, but I could do a test just on this cluster at some point.</li>
+                    <li>During the process of making my test set, I realised there was some leakage from clusters. This came from the method of clustering: I used MMseqs2's easy search with cascaded clustering as I thought it would be faster. However, this method uses a representative structure per sub cluster, so it can miss relationships later on, so I re-ran the clustering without this. There will still be some leakage, but this is a good first run through (or second run through, removing the cascaded flag)</li>
+                </ul>
+
+                <h2>Scaling and features</h2>
+                <p>As a preliminary physics based feature, I included an electrostatic term and a London dispersion term - discussed further below.</p>
+                <ul>
+                    <li><var>1/r</var><sup>6</sup> is over a 1.5&ndash;5 angstrom range. Could log it so it's closer to linear in log <var>r</var> - but then the physics branch would need the raw (i.e. in the Lennard-Jones potential). So, I included both, with the relevant branches using the relevant feature.</li>
+                    <li><code>vdw_radius</code> is 1.5&ndash;2.1 &Aring;, leave as is</li>
+                    <li><var>y</var> (pK<sub>d</sub>, 0.6&ndash;15.2, mean 5.9) centred around zero</li>
+                </ul>
+                <ul>
+                    <li>As the coords of these proteins are taken from diffraction patterns, i.e. from crystallised proteins, the atom coords are an average. For parts of the protein that can move, this means you end up with atoms able to be in multiple occupancies, with "altloc" in the pdb file showing the occupancy of an atom in the different coords. it only affects one pocket file, but to handle I deduped by keeping the first CA so no residues are repeated.</li>
+                    <li>Using <code>nn.Embedding</code> for element, node type, i.e. ligand/protein/cofactor/metal, edge type (e.g. prot-prot, lig-prot etc), so as not to imply a linear relationship between them.</li>
+                </ul>
+
+                <h2>GCN + Physics</h2>
+                <p>This model takes in the coordinates of the atoms in a ligand-protein complex and predicts the binding affinity.
+                    Binding affinity depends on the forces between a few atom connections (i.e. those in the interface between the ligand and the binding site of the protein).
+                </p>
+                <p>The graph per complex includes atom coordinates from both the ligand and the protein. While the ligand file contains info about bond connectivity, the protein file doesn't.
+                    And, neither show the bonds between the ligand and protein. I chose a cut off of 4 angstroms (down from 5 to save on computational effort) to show connectivity between atoms that are within this distance.
+                    This leads to a coordination of about 11 per atom (includes weaker intermolecular forces such as london, vdw, H-bonds). Note - this is just between the pocket file and the ligand, not the whole protein.
+                    As expected, most of these bonds will be protein-protein bonds, as most atoms are in the protein: about 93% of bond types are this, and only 2% are ligand-protein, i.e. the ones we are looking for.
+                </p>
+                <p>Each edge has only the attractive Lennard-Jones term (<var>1/r</var><sup>6</sup>). As mentioned, there is no docking in this project so far as we have crystal structures for the atom coordinates.
+                    The model can learn the weights for this attractive term, but, for example, if atoms are too close the weight may learn to be negative (i.e. repulsive).
+                </p>
+                <p>Each atom has features encoded, for example element number, what type of atom (ligand, protein, metal, cofactor etc), which residue it belongs to, van der Waals radius. Edges are encoded similarly.</p>
+                <p>For starters, I began with a GINEConv: summation with a LayerNorm (as each atom has around 11 contacts, some kind of standardisation is needed to stop this growing massive).</p>
+
+                <h3>Physics branch</h3>
+                <p>Only ligand-protein, ligand-metal and ligand-cofactor edges survive (edges are labelled using a mask).</p>
+                <p>The energy term is determined as:</p>
+                <p class="formula">energy = 0.5 &times; &Sigma; contributions &nbsp; <span class="formula-note">per graph</span></p>
+                <p>The 0.5 factor is needed because the graph edges go in both directions, so they are double counted.</p>
+                <p>For each interface edge, <var>i</var>,<var>j</var>:</p>
+                <p class="formula"><var>w<sub>1</sub></var>, <var>w<sub>6</sub></var> = pair_MLP([<var>h<sub>i</sub></var>, <var>h<sub>j</sub></var>, <var>e<sub>ij</sub></var>])</p>
+                <p>And</p>
+                <p class="formula">contribution = <var>w<sub>1</sub></var> &times; (1/<var>r<sub>ij</sub></var>) + <var>w<sub>6</sub></var> &times; (1/<var>r<sub>ij</sub></var>)<sup>6</sup></p>
+                <p>- a weight per term. This imposes the distance dependence (although, not restricted to just being on <var>r</var>)</p>
+                <p>The final prediction is:</p>
+                <p class="formula">prediction = learned GCN + energy_scale &times; energy</p>
+                <p>where <code>energy_scale</code> is initialised at 0, so the physics branch is only introduced if beneficial. This is another learned number.</p>
+
+                <h3>The Lennard-Jones potential</h3>
+                <p>The first physics features I thought about adding were from the Lennard-Jones potential:</p>
+                <p class="formula"><var>V</var>(<var>r</var>) = 4&epsilon; [(&sigma; / <var>r</var>)<sup>12</sup> &minus; (&sigma; / <var>r</var>)<sup>6</sup>]</p>
+                <dl>
+                    <dt>&epsilon;</dt>
+                    <dd>depth of potential well</dd>
+                    <dt><var>r</var></dt>
+                    <dd>centre-to-centre distance between the two particles in question</dd>
+                    <dt>(&sigma; / <var>r</var>)<sup>12</sup></dt>
+                    <dd>the repulsive term (overlap of electron clouds)</dd>
+                    <dt>(&sigma; / <var>r</var>)<sup>6</sup></dt>
+                    <dd>the attractive term (long range attraction by van der Waals forces)</dd>
+                    <dt>&sigma;</dt>
+                    <dd>the distance at which interparticle potential energy is zero (where van der Waals radius = &sigma; / 2)</dd>
+                </dl>
+
+                <h2>First training run</h2>
+                <p>Ran into some memory issues: I had to run the different seeds in sequence rather than in parallel. The first experiment was a plain GCN vs a physics GCN (where the physics element was including some intermolecular forces)</p>
+
+                <h3>Results</h3>
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <thead>
+                            <tr><th>Metric</th><th><code>gcn_physics</code></th><th><code>gcn_plain</code></th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>rmse</td><td>1.531 &plusmn; 0.091</td><td>1.612 &plusmn; 0.122</td></tr>
+                            <tr><td>mae</td><td>1.203 &plusmn; 0.058</td><td>1.259 &plusmn; 0.090</td></tr>
+                            <tr><td>pearson</td><td>0.408 &plusmn; 0.037</td><td>0.255 &plusmn; 0.142</td></tr>
+                            <tr><td>spearman</td><td>0.410 &plusmn; 0.041</td><td>0.241 &plusmn; 0.135</td></tr>
+                            <tr><td>r2</td><td>0.159 &plusmn; 0.037</td><td>0.067 &plusmn; 0.063</td></tr>
+                        </tbody>
+                        <tbody>
+                            <tr><td>best_epoch</td><td>14.8 &plusmn; 6.3</td><td>20.2 &plusmn; 19.4</td></tr>
+                            <tr><td>epochs_run</td><td>25.8 &plusmn; 6.3</td><td>31.2 &plusmn; 19.4</td></tr>
+                            <tr><td>seconds</td><td>639 &plusmn; 153</td><td>739 &plusmn; 460</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p>On first glance it looks like the physics GCN is better. But, is it better because of the limited physics features, or just because we're training more params here?
+                    It reached its best epoch in fewer iterations and slightly less time. For seed 3 of GCN plain, the best epoch was the first one (patience was 20), so no further training beyond the initial weights.
+                </p>
+                <p>r2 score is pretty low: 0.159 for gcn physics, so not a whole lot better than the mean (but, better than gcn plain at least).</p>
+
+                <h3>Looking seed by seed</h3>
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <thead>
+                            <tr>
+                                <th rowspan="2">seed</th>
+                                <th colspan="3" class="group-start">rmse</th>
+                                <th colspan="3" class="group-start">mae</th>
+                                <th colspan="3" class="group-start">r2</th>
+                                <th colspan="3" class="group-start">pearson</th>
+                                <th colspan="3" class="group-start">spearman</th>
+                                <th colspan="2" class="group-start">best epoch / num epochs</th>
+                            </tr>
+                            <tr>
+                                <th class="group-start">phys</th><th>plain</th><th>diff</th>
+                                <th class="group-start">phys</th><th>plain</th><th>diff</th>
+                                <th class="group-start">phys</th><th>plain</th><th>diff</th>
+                                <th class="group-start">phys</th><th>plain</th><th>diff</th>
+                                <th class="group-start">phys</th><th>plain</th><th>diff</th>
+                                <th class="group-start">phys</th><th>plain</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>0</td>
+                                <td class="group-start">1.482</td><td>1.536</td><td>&minus;0.054</td>
+                                <td class="group-start">1.182</td><td>1.209</td><td>&minus;0.027</td>
+                                <td class="group-start">0.096</td><td>0.028</td><td>+0.068</td>
+                                <td class="group-start">0.344</td><td>0.236</td><td>+0.108</td>
+                                <td class="group-start">0.342</td><td>0.216</td><td>+0.126</td>
+                                <td class="group-start">23/34</td><td>13/24</td></tr>
+                            <tr><td>1</td>
+                                <td class="group-start">1.520</td><td>1.541</td><td>&minus;0.021</td>
+                                <td class="group-start">1.235</td><td>1.218</td><td>+0.017</td>
+                                <td class="group-start">0.188</td><td>0.165</td><td>+0.023</td>
+                                <td class="group-start">0.436</td><td>0.419</td><td>+0.017</td>
+                                <td class="group-start">0.435</td><td>0.395</td><td>+0.040</td>
+                                <td class="group-start">10/21</td><td>50/61</td></tr>
+                            <tr><td>2</td>
+                                <td class="group-start">1.664</td><td>1.757</td><td>&minus;0.093</td>
+                                <td class="group-start">1.212</td><td>1.299</td><td>&minus;0.087</td>
+                                <td class="group-start">0.162</td><td>0.066</td><td>+0.096</td>
+                                <td class="group-start">0.412</td><td>0.299</td><td>+0.113</td>
+                                <td class="group-start">0.421</td><td>0.277</td><td>+0.144</td>
+                                <td class="group-start">17/28</td><td>28/39</td></tr>
+                            <tr><td>3</td>
+                                <td class="group-start">1.564</td><td>1.731</td><td>&minus;0.167</td>
+                                <td class="group-start">1.271</td><td>1.396</td><td>&minus;0.125</td>
+                                <td class="group-start">0.183</td><td>&minus;0.001</td><td>+0.184</td>
+                                <td class="group-start">0.430</td><td>0.030</td><td>+0.400</td>
+                                <td class="group-start">0.445</td><td>0.029</td><td>+0.417</td>
+                                <td class="group-start">17/28</td><td>0/11</td></tr>
+                            <tr><td>4</td>
+                                <td class="group-start">1.423</td><td>1.495</td><td>&minus;0.072</td>
+                                <td class="group-start">1.117</td><td>1.171</td><td>&minus;0.054</td>
+                                <td class="group-start">0.163</td><td>0.076</td><td>+0.087</td>
+                                <td class="group-start">0.417</td><td>0.291</td><td>+0.126</td>
+                                <td class="group-start">0.408</td><td>0.289</td><td>+0.119</td>
+                                <td class="group-start">7/18</td><td>10/21</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <ul>
+                    <li>pearson is showing correlation: not super high, but better for physics (also only shows correlation, not if the pK<sub>d</sub> values are close, hence need other metrics for calibration). Note that there may not be a linear correlation here, further investigations needed.</li>
+                    <li>spearman: shows the rank. again not super high, and note that this is across all proteins, not looking at rank within protein family (which might be interesting)</li>
+                </ul>
+
+                <h3>Looking at the spread of pK<sub>d</sub></h3>
+                <p class="caption">i.e. how wide a variation of pK<sub>d</sub> the data covers</p>
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <thead>
+                            <tr><th>seed</th><th>y_true span</th><th>physics span</th><th>plain span</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>0</td><td>10.20</td><td>4.25</td><td>3.42</td></tr>
+                            <tr><td>1</td><td>8.66</td><td>4.39</td><td>5.91</td></tr>
+                            <tr><td>2</td><td>13.64</td><td>4.75</td><td>4.19</td></tr>
+                            <tr><td>3</td><td>11.37</td><td>4.78</td><td>0.24</td></tr>
+                            <tr><td>4</td><td>9.34</td><td>3.65</td><td>3.12</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p>Can see that both the GCNs predict within a really narrow span. Seed 3 for the plain gcn is really narrow, and best epoch was 0, so it didn't improve upon that in the patience.</p>
+
+                <h3>Splitting into bands</h3>
+                <p>Given this, it seems that the models prefer to predict close to one value. Splitting into bands:</p>
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <thead>
+                            <tr>
+                                <th rowspan="2">predicted band</th>
+                                <th colspan="3" class="group-start"><code>gcn_physics</code></th>
+                                <th colspan="3" class="group-start"><code>gcn_plain</code></th>
+                            </tr>
+                            <tr>
+                                <th class="group-start">n</th><th>gap</th><th>rmse</th>
+                                <th class="group-start">n</th><th>gap</th><th>rmse</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>(0.0, 4.5]</td><td class="group-start">164</td><td>+0.085</td><td>1.446</td><td class="group-start">181</td><td>&minus;0.295</td><td>1.609</td></tr>
+                            <tr><td>(4.5, 5.0]</td><td class="group-start">642</td><td>+0.179</td><td>1.574</td><td class="group-start">476</td><td>&minus;0.135</td><td>1.501</td></tr>
+                            <tr><td>(5.0, 5.5]</td><td class="group-start">1031</td><td>&minus;0.085</td><td>1.479</td><td class="group-start">879</td><td>&minus;0.106</td><td>1.488</td></tr>
+                            <tr><td>(5.5, 6.0]</td><td class="group-start">904</td><td>&minus;0.102</td><td>1.544</td><td class="group-start">1353</td><td>&minus;0.007</td><td>1.624</td></tr>
+                            <tr><td>(6.0, 6.5]</td><td class="group-start">410</td><td>&minus;0.041</td><td>1.590</td><td class="group-start">391</td><td>+0.200</td><td>1.800</td></tr>
+                            <tr><td>(6.5, 7.0]</td><td class="group-start">206</td><td>+0.127</td><td>1.444</td><td class="group-start">159</td><td>+0.281</td><td>1.952</td></tr>
+                            <tr><td>(7.0, 7.5]</td><td class="group-start">91</td><td>+0.259</td><td>1.479</td><td class="group-start">41</td><td>+0.472</td><td>2.008</td></tr>
+                            <tr><td>(7.5, 20.0]</td><td class="group-start">45</td><td>+1.175</td><td>2.085</td><td class="group-start">13</td><td>+0.232</td><td>1.411</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="caption">gap = pred_mean &minus; true_mean; positive means predicting higher pK<sub>d</sub> than true</p>
+
+                <p>This shows that both GCNs are worse at predicting higher pK<sub>d</sub>s - not ideal, given that the application of this model would likely be to find the highest pK<sub>d</sub>.
+                    Worth noting that n for these higher pK<sub>d</sub>s is smaller, but still something to note.
+                </p>
+
+                <h2>Not really a physics-informed neural net</h2>
+                <p>The results above aren't really a fair test of whether GCN physics outperforms GCN plain: GCN physics has a separate head going on that adds a lot of parameters that GCN plain doesn't have.
+                    Is the better performance attributable to the physics part, or the extra parameters?
+                </p>
+                <p>Upon further tests, I also realised that the physics term wasn't really restricting anything - the weights are an output of a function in which <var>r</var> is an input, and therefore they depend on <var>r</var>.
+                    So instead of a constant multiplied by a Lennard-Jones potential, it's a function of <var>r</var> multiplied by the Lennard-Jones potential term ... so not really useful.
+                </p>
+                <p>Testing this using a few more experiments:</p>
+                <dl>
+                    <dt><code>gcn_physics_blind</code></dt>
+                    <dd>the <code>pair_mlp</code> in the <var>w<sub>1</sub></var> term only gets the edge embedding (edge class), so the same numbers for every ligand-protein edge, regardless of distance.
+                        This can be tested by scaling the <var>r</var> terms by 2: blind energy changes by exactly 2.000000, full physics by 2.068370. so <var>w</var> is reading <var>r</var> in the physics branch.</dd>
+                    <dt><code>gcn_contact_sum</code></dt>
+                    <dd>blind as above, and terms that the <var>w<sub>1</sub></var> weights would be multiplied by are replaced by 1s so energy becomes 0.5 &times; sum(<var>w<sub>1</sub></var> + <var>w<sub>2</sub></var>).
+                        So distance no longer matters, it's just a case of yes/no does the edge exist already. This is basically looking at whether the graph just learns from the number of contacts there are.</dd>
+                    <dt><code>gcn_plain_wide</code></dt>
+                    <dd>just increasing the number of params in the plain GCN to see if it improves. As the three physics tests have the same number of params, we don't need to worry about this when comparing them.</dd>
+                </dl>
+
+                <p>Increasing params in <code>gcn_plain_wide</code> does nothing (actually slightly worse than plain). The <var>1/r</var> + <var>1/r</var><sup>6</sup> basis adds about 20%.
+                    The constrained version (i.e. <var>w</var> doesn't depend on <var>r</var>) adds nothing - will keep this as it's a real physics constraint, but it doesn't add anything.
+                    The contact sum shows that uplift is just due to having extra connections.
+                </p>
+
+                <p class="callout">So far ... physics is doing nothing :)</p>
+
+                <p>Next up: fixing the L-J feature and adding more physics features (i.e. directional geometry, H-bonds) and re-running this test to see if it adds us anything.
+                    Currently, the model is fairly simple and massively underfitting, so more features may help push up the performance.
+                </p>
+            </article>
+        </main>
+    </div>
+
+</body>
+</html>
