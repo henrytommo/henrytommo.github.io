@@ -347,6 +347,27 @@ article tbody tr:hover {
     background: var(--surface);
 }
 
+/* grouped column headers (two header rows with colspan) */
+article table thead th[colspan] {
+    text-align: center;
+    border-bottom: 1px solid var(--rule);
+}
+
+article table .group-start {
+    border-left: 1px solid var(--rule);
+}
+
+/* a second tbody starts a new block of rows */
+article table tbody + tbody tr:first-child td {
+    border-top: 2px solid var(--rule);
+}
+
+.formula-note {
+    font-family: var(--sans);
+    font-size: 0.85rem;
+    color: var(--c2);
+}
+
 /* numeric tables: right-align the figures, keep the label column left */
 article table.numeric td:not(:first-child),
 article table.numeric th:not(:first-child) {
