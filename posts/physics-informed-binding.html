@@ -306,10 +306,34 @@
                     The contact sum shows that uplift is just due to having extra connections.
                 </p>
 
-                <p class="callout">So far ... physics is doing nothing :)</p>
+                <p>So far ... physics is doing nothing :)</p>
 
-                <p>Next up: fixing the L-J feature and adding more physics features (i.e. directional geometry, H-bonds) and re-running this test to see if it adds us anything.
-                    Currently, the model is fairly simple and massively underfitting, so more features may help push up the performance.
+                <h2>Edge cutoffs</h2>
+                <p>Next, though, each training run was taking a long time. A lot of the edges in the model are within the protein, and these probably contribute less to the binding affinity than those bonds in the interface between ligand and pocket.
+                    I had picked 4 angstroms as the cutoff for all edges, but as edges are classified, it would be possible to apply different cutoffs depending on the type of bond.
+                </p>
+                <p>I added functionality to categorise edges into separate interface and non-interface cutoffs (first confirming that 4/4 reproduced the old numbers).
+                    Widening the interface to 6 &Aring; was worse on all four models and both metrics (mean rmse +0.037, Pearson &minus;0.073, worse 8/8, 2 seeds per model); 3.5/5.0 was worse everywhere too.
+                    3.5/4.0, run over five seeds for the compute saving, came out significantly worse for <code>gcn_plain</code> (+0.034, <var>t</var> = 3.10) and <code>gcn_physics</code> (+0.017, <var>t</var> = 2.96) and neutral for the other two.
+                </p>
+                <p>So, kept 4/4: extra interface range adds noise, not worth it for speedier calculations.</p>
+
+                <h2>A real attractive term</h2>
+                <p>Next, I looked a bit closer at the physics branch. As established, it's not really a physics branch so much as some extra params: the weight is not independent of <var>r</var> so it can learn its own relationships with <var>r</var> rather than keeping the distance terms I included.</p>
+                <p>Replaced the physics branch's unconstrained MLP with a real attractive term,</p>
+                <p class="formula">&minus;&epsilon;<sub><var>ij</var></sub> (<var>r</var><sub>min</sub> / <var>r</var>)<sup>6</sup></p>
+                <p>with <var>r</var><sub>min</sub> fixed at the summed vdW radii (RDKit) and no <var>r</var><sup>&minus;12</sup>, leaving only the 11 per-element well depths learned (C, N, O etc).</p>
+                <p>At first there was a sign error &mdash; a favourable interaction has to raise pK<sub>d</sub> &mdash; made every seed switch the branch off; fixing it was worth &minus;0.082 rmse on 5/5 seeds (<var>t</var> = &minus;5.39).
+                    The corrected branch then matched <code>gcn_physics</code> to within &plusmn;0.05 rmse at 95%, on eleven parameters against twelve thousand.
+                </p>
+
+                <h3>The learnt &epsilon;</h3>
+                <p>At first, it seemed the learnt &epsilon; just tracked whatever the initialised value was. To investigate further, I fitted the branch alone (i.e. without the GCN branch) and let it run to convergence.
+                    Four different initial starting values all reach one optimum (per element), stable across five seeds.
+                </p>
+                <p>It gave carbon a much higher &epsilon; than nitrogen or oxygen &mdash; against expectation, as nitrogen and oxygen are more polarisable than carbon.
+                    However, as this was trained with a target of pK<sub>d</sub>, it seems to point to non-polar interactions having a greater effect.
+                    Reducing the 11 elements to C, N, O plus other didn't give much of a change.
                 </p>
             </article>
         </main>
