@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leakage and the twilight zone</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <div class="logo">chem <span class="plus">+</span> ml</div>
+            <nav>
+                <ul>
+                    <li><a href="../index.html">Home</a></li>
+                    <li><a href="../posts.html" class="active">Posts</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <article>
+                <h1>Leakage and the twilight zone</h1>
+                <span class="post-date">October 2026</span>
+
+                <p>The "protein folding problem" is a long standing problem that asks how a protein's 3D structure is determined from its constituent amino acids.
+                    It has been such a pressing issue that there are even competitions whose main aim is to see who can solve it (for example, the Critical Assessment of Protein Structure Prediction, or CASP).
+                    AlphaFold won the 13th CASP in 2018, and its successor AlphaFold2 won CASP14 in 2020 with predictions close to experimental accuracy - experimental structures here coming from X-ray crystallography, cryo-EM or NMR.
+                    In 2024, Demis Hassabis and John Jumper shared the Nobel Prize in Chemistry for that work (alongside David Baker, for de novo protein design).
+                </p>
+
+                <p>We still don't really know the full biophysical mechanics behind why proteins fold in the way that they do, we are just able to use deep learning to predict how a chain of amino acids might fold based on what's been learnt from reams of other proteins.
+                    But the bit that matters for this post is the assumption underneath all of it: the 3D shape depends on the amino acid sequence, and chains that are similar fold in a similar way and often have similar chemistry.
+                </p>
+
+                <p>That similarity usually isn't a coincidence. Protein evolution is the name given to the process of small changes that happen to proteins over time, and this evolution can happen in several ways:</p>
+                <ul>
+                    <li><strong>duplication:</strong> two copies, one that continues its usual function, and a second, which is free to mutate, potentially evolving a new function</li>
+                    <li><strong>point mutations:</strong> proteins are coded for by DNA, so a nucleotide change can swap an amino acid in the chain - though plenty of changes swap nothing at all, as the genetic code is degenerate and several codons code for the same residue</li>
+                    <li><strong>domain shuffling:</strong> proteins are often made up of various chunks. If these are ordered differently, the protein's function may be altered</li>
+                </ul>
+
+                <p>Most of these changes are neutral, or near enough. A smaller number are harmful, and occasionally a mutated protein might perform its role better than its predecessor, akin to natural selection.
+                    Either way, changing a very small part of a protein, whilst still a change, is a change in a sequence of potentially thousands of amino acids.
+                    Whilst it might, for example, bind a little better to a substrate, it will still have a broadly similar structure to its homologs (i.e. proteins from the same evolutionary branch).
+                    These proteins, while distinct, will still be fairly similar structurally and chemically.
+                </p>
+
+                <p>Now to change tack. Let's say you are training a machine learning model, such as a ligand-protein binding affinity prediction (see <a href="physics-informed-binding.html" target="_blank" rel="noopener">my ligand binding project here</a>).
+                    The structure of the protein and ligand are likely to be key indicators of how things bind. When training, you'll need to split your data into training sets and val/test sets.
+                    Crucially, there can be no leakage between these categories: say, for example, you were making a model to predict whether a customer defaults on a loan.
+                    If, in your training data, you use "late fees" as a feature, you will probably get a much better prediction for your target.
+                    However, in reality, late fees are only charged AFTER a customer has defaulted on a loan, i.e. after the target variable has been decided. This is data leakage, where you have your target feature indirectly feeding the model.
+                    Similarly, having similar families of proteins spread across train and test sets means that the model may just memorise the general properties of a protein family and repeat them,
+                    leading to an artificially inflated test score that isn't really representative of what would have happened if the model ran on a new, unseen protein type.
+                </p>
+
+                <h2>What "similar" means</h2>
+                <p>There are several different ways a protein can be similar, including:</p>
+                <ul>
+                    <li><strong>sequence identity:</strong> the percentage of aligned residues that match. This is what BLAST and MMseqs2 give, and it's what the thresholds below refer to.</li>
+                    <li><strong>structural similarity:</strong> whether the folds superimpose. Usually only loosely implied by sequence identity.</li>
+                    <li><strong>functional similarity:</strong> whether they do the same job, or bind the same thing. Analogous enzymes can converge on the same chemistry from almost no shared sequence at all, so this is the one sequence identity is worst at predicting.</li>
+                </ul>
+                <p>The other half of any identity threshold is coverage: how much of each sequence the alignment has to span. 30% identity over 20 residues means nothing; 30% over 300 residues is a much bigger match.</p>
+
+                <h2>The twilight zone</h2>
+                <p>So, how do you decide what threshold of similarity to divide your proteins? Do you decide that proteins with 50% identity are too similar, or lower, perhaps 25%?
+                    Fortunately this is an area with a lot of research, which shows there is a so-called "twilight zone" of roughly 20-35% sequence identity (Rost, 1999) - a grey area where it's hard to tell whether two proteins came from the same evolutionary ancestor or just happen to look alike by coincidence.
+                    Below about 25% you can't reliably tell at all. Proteins that evolved from the same ancestor tend to have similar properties and functions, and it's these that we want to avoid splitting across train and test sets.
+                    I went with 30%, i.e. the top of the twilight zone, on the basis that anything above it is too likely to be homologous to risk.
+                </p>
+
+                <h2>Clustering and leakage</h2>
+                <p>The idea is to split the dataset into groups of proteins that are 30% identical or more, and then assign whole groups to train/test/val rather than individual proteins. In my PDBbind set that was:</p>
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <tbody>
+                            <tr><td class="wrap">unique complexes</td><td>6,934</td></tr>
+                            <tr><td class="wrap">distinct proteins (the same protein appears with different ligands)</td><td>4,944</td></tr>
+                            <tr><td class="wrap">clusters at 30% identity</td><td>1,251</td></tr>
+                            <tr><td class="wrap">clusters of one</td><td>588</td></tr>
+                            <tr><td class="wrap">median cluster size</td><td>2</td></tr>
+                            <tr><td class="wrap">largest cluster</td><td>1,475</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p>Two problems showed up immediately. The first is that the biggest cluster held over a fifth of the complexes, so the usual 80/10/10 ratios can't be met by chance.
+                    I put the biggest family in train and spread the rest randomly until the splits came out roughly right, which meant that family never gets tested on (a special holdout split could be done to test it).
+                </p>
+
+                <p>The second is that my initial clustering didn't really prevent the leakage I was trying to stop. I originally used MMseqs2's easy search with cascaded clustering, as it's faster and I was already having issues with computational speed in that project.
+                    But cascaded clustering compares against a representative sequence per sub-cluster, so relationships that only show up between non-representative members get missed, which means that there can be pairs above 30% ending up in different clusters.
+                    I found this while building the test set and re-ran the clustering without the cascaded flag.
+                    There's likely still some leakage left: single-linkage style clustering can chain A-B-C together where A and C aren't actually similar, and no clustering method gives you a hard guarantee that the maximum identity between two clusters is below your threshold.
+                    So this is a reduction in leakage rather than an elimination of it.
+                </p>
+
+                <h2>Leakage on the ligand side</h2>
+                <p>Protein similarity is only the half of it. 6,934 complexes across 4,944 proteins means the same protein recurs with different ligands, and the same thing happens in reverse: common ligands, fragments and close analogues turn up across many complexes.
+                    If a ligand (or something nearly identical to it) sits in both train and test, the model can recall its typical affinity without learning anything about the interaction. Clustering by protein alone does nothing about this.
+                    Fortunately, RDKit offers Tanimoto similarity with fingerprint ECFP4 - i.e. not specifying stereochem (specifying fingerprint! See
+                    <a href="https://greglandrum.github.io/rdkit-blog/posts/2025-07-17-naming-similarity-metrics.html" target="_blank" rel="noopener">here</a>).
+                </p>
+
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <tbody>
+                            <tr><td class="wrap">distinct ligands</td><td>5,324 of 6,934 complexes</td></tr>
+                            <tr><td class="wrap">complexes sharing a ligand</td><td>2,306 (33.3%) in 696 groups</td></tr>
+                            <tr><td class="wrap">test complexes whose exact ligand appears outside test</td><td>126 of 699 (18.0%)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="caption">the five largest shared-ligand groups</p>
+                <div class="table-wrap">
+                    <table class="numeric">
+                        <thead>
+                            <tr><th>group</th><th>complexes</th><th>pK<sub>d</sub> spread</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>1</td><td>38</td><td>5.42</td></tr>
+                            <tr><td>2</td><td>30</td><td>5.48</td></tr>
+                            <tr><td>3</td><td>30</td><td>4.70</td></tr>
+                            <tr><td>4</td><td>28</td><td>2.93</td></tr>
+                            <tr><td>5</td><td>24</td><td>3.93</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p>So, ligand leakage that I will need to account for.</p>
+
+                <h2>Measuring similarity: BLAST</h2>
+                <p>Several methods exist for finding sequence similarity. The exhaustive one is Smith-Waterman, which finds the optimal local alignment but is far too slow to run across a whole database, so what's normally used are heuristics that approximate it.</p>
+                <p>BLAST (Basic Local Alignment Search Tool) is the best known of these. It finds regions of local similarity by comparing a query sequence against a library of sequences, and calculates the significance of the matches. It's fast rather than exhaustive, as it looks for short exact matches first:</p>
+                <ul>
+                    <li>it begins by breaking the query sequence down into fragments, called words. These are short and overlapping (for proteins, the default word size is 3 amino acids)</li>
+                    <li>it generates a list of possible words that would score above a certain threshold if compared to the original query</li>
+                    <li>it scans for exact matches to these</li>
+                    <li>once a word hit is found, the sequence is extended at both ends to see if the match continues. First ungapped, then gapped: allowing spaces so that sequences which match apart from a few odd residues still align</li>
+                </ul>
+                <p>Finally, the segments that survive with a high enough matching score get two metrics calculated:</p>
+                <dl>
+                    <dt>bit score</dt>
+                    <dd>the alignment score normalised by the scoring system, which is what makes it comparable between searches and independent of the database size (higher = better)</dd>
+                    <dt>expect value (E-value)</dt>
+                    <dd>the number of hits with at least that score you'd expect to see by pure chance in a database of that size (lower = better)</dd>
+                </dl>
+
+                <h2>Measuring similarity: MMseqs2</h2>
+                <p>A faster approach is MMseqs2 (Many-against-Many sequence searching), which the authors report as several orders of magnitude faster than BLAST.
+                    It compares k-mers (typically around 7 amino acids for proteins), and the main trick is that rather than triggering on a single word match like BLAST, it requires two similar k-mer matches within a given distance of each other.
+                    Two hits means the two sequences line up consistently, rather than matching in two unrelated places, which cuts out a lot of false positives cheaply.
+                </p>
+                <p>The rest of the pipeline is similar ish to BLAST: the target database is pre-indexed into a k-mer lookup table, sequences that survive the two-hit filter get an ungapped alignment score, anything below threshold is dropped, and the survivors go through gapped alignment.
+                    The speed comes from the prefilter doing almost all of the discarding before any expensive alignment runs, with the k-mer lookup and the ungapped stage both vectorised.
+                </p>
+            </article>
+        </main>
+    </div>
+
+</body>
+</html>
